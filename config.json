@@ -4,22 +4,22 @@
   "routes": {
     "sfp": {
       "plug": {
-        "_comment": "12-point model, per user's real caliper measurements of the physical SFP plug: a1-a4 = 0in (near/tip face), a5-a8 = 0.75in = 19.05mm, a9-a12 = 1.5in = 38.10mm, all measured from the near face along the insertion axis. x,y cross-section kept from the original 8-point model (not independently re-measured). Depths verified plausible against a real photo (run_20260915_195532_775244) showing a full-size SFP transceiver body long enough for a 38.1mm feature -- NOT yet verified via a real reprojection check (production model has a real/sim domain gap, gave 0 detections on that real photo).",
+        "_comment": "12-point model, per user's real caliper measurements of the physical SFP plug. Depth (insertion axis): a1-a4 = 0in (near/tip face), a5-a8 = 0.75in = 19.05mm, a9-a12 = 1.5in = 38.10mm. Cross-section, measured directly (2026-09-16): a1-a4 (height, y-axis) = 0.225in = 5.715mm full (half=2.8575mm) -- corrects the earlier sim-derived 7.6mm, a real ~25% difference and the likely main cause of a 9.3mm/2.66deg cross-camera pose disagreement seen on real data before this fix; a3-a4 (width, x-axis) = 0.5in = 12.7mm full (half=6.35mm) -- close to the sim's 12.8mm, negligible correction. The -0.0020 tip-face z-inset is a stability margin carried over from the sim model (keeps points slightly inside the visual tip edge for grazing-angle stability), not part of the measured depth.",
         "labels": ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10", "a11", "a12"],
         "training_labels": ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"],
         "local_keypoints_m": [
-          [0.0064, 0.0038, -0.0020],
-          [-0.0064, 0.0038, -0.0020],
-          [-0.0064, -0.0038, -0.0020],
-          [0.0064, -0.0038, -0.0020],
-          [0.0064, 0.0038, -0.02105],
-          [-0.0064, 0.0038, -0.02105],
-          [-0.0064, -0.0038, -0.02105],
-          [0.0064, -0.0038, -0.02105],
-          [0.0064, 0.0038, -0.0401],
-          [-0.0064, 0.0038, -0.0401],
-          [-0.0064, -0.0038, -0.0401],
-          [0.0064, -0.0038, -0.0401]
+          [0.00635, 0.0028575, -0.0020],
+          [-0.00635, 0.0028575, -0.0020],
+          [-0.00635, -0.0028575, -0.0020],
+          [0.00635, -0.0028575, -0.0020],
+          [0.00635, 0.0028575, -0.02105],
+          [-0.00635, 0.0028575, -0.02105],
+          [-0.00635, -0.0028575, -0.02105],
+          [0.00635, -0.0028575, -0.02105],
+          [0.00635, 0.0028575, -0.0401],
+          [-0.00635, 0.0028575, -0.0401],
+          [-0.00635, -0.0028575, -0.0401],
+          [0.00635, -0.0028575, -0.0401]
         ],
         "reference_points": {
           "left": ["a2", "a3", "a4", "a10", "a11", "a12"],
