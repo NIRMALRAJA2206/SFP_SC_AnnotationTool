@@ -64,8 +64,20 @@ for the physical rig that captured these images:
 ```
 `calibration.sim_example.json` in this repo is a **simulation-only** example
 (the AIC Gazebo rig at 1152x1024) -- it documents the schema, it is NOT valid
-for real camera captures at 2464x2056. Supply your own real calibration file
-(camera intrinsic calibration + hand-eye/rig extrinsics) for real hardware.
+for real camera captures at 2464x2056.
+
+`calibration.real_wrist_v3.json` in this repo IS a real, usable calibration:
+converted from `~/ws_nr/calibration/three_camera_charuco_v3` (Charuco board,
+100 shared views, per-camera RMS ~0.7px, Basler acA2440-20gc + 8.5mm lens at
+2464x2056 -- matches this tool's target resolution exactly). Camera mapping
+used: `camera_1`(serial 25530362)`=left`, `camera_2`(25530348)`=center`,
+`camera_3`(25530346)`=right`. The reference/common frame is `camera_1`
+(left)'s own optical frame -- `T_tool0_from_optical` in this file really
+means "T from the left camera's frame", the field name is kept only for
+schema compatibility. **Re-run the Charuco calibration and regenerate this
+file if focus, aperture, resolution, or camera mounting changes** (per that
+calibration's own `capture_settings.json` note).
+
 Without a calibration file, the tool still works -- Plug objects just fall
 back to fully-manual labeling like Port objects already are.
 
