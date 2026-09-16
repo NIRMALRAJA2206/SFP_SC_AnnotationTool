@@ -1,0 +1,71 @@
+{
+  "image_size": {"width": 2464, "height": 2056},
+  "cameras": ["left", "center", "right"],
+  "routes": {
+    "sfp": {
+      "plug": {
+        "labels": ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"],
+        "local_keypoints_m": [
+          [0.0064, 0.0038, -0.0020],
+          [-0.0064, 0.0038, -0.0020],
+          [-0.0064, -0.0038, -0.0020],
+          [0.0064, -0.0038, -0.0020],
+          [0.0064, 0.0038, -0.0200],
+          [-0.0064, 0.0038, -0.0200],
+          [-0.0064, -0.0038, -0.0200],
+          [0.0064, -0.0038, -0.0200]
+        ],
+        "reference_points": {
+          "left": ["a2", "a3", "a4"],
+          "center": ["a3", "a4"],
+          "right": ["a1", "a3", "a4"]
+        },
+        "auto_calculate": true,
+        "reference_image_dir": "assets/references/sfp/plug"
+      },
+      "port": {
+        "labels": ["b1", "b2", "b3", "b4", "b5", "b6", "b7", "b8"],
+        "local_keypoints_m": null,
+        "reference_points": null,
+        "auto_calculate": false,
+        "reference_image_dir": "assets/references/sfp/port"
+      }
+    },
+    "sc": {
+      "plug": {
+        "labels": ["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8"],
+        "local_keypoints_m": [
+          [-0.0100, -0.0032, -0.00265],
+          [0.0100, -0.0032, -0.00265],
+          [0.0100, 0.0032, -0.00265],
+          [-0.0100, 0.0032, -0.00265],
+          [-0.0100, -0.0032, -0.01465],
+          [0.0100, -0.0032, -0.01465],
+          [0.0100, 0.0032, -0.01465],
+          [-0.0100, 0.0032, -0.01465]
+        ],
+        "reference_points": {
+          "left": ["c1", "c4", "c8"],
+          "center": ["c1", "c4"],
+          "right": ["c1", "c4", "c5"]
+        },
+        "auto_calculate": true,
+        "reference_image_dir": "assets/references/sc/plug"
+      },
+      "port": {
+        "labels": ["d1", "d2", "d3", "d4", "d5"],
+        "local_keypoints_m": null,
+        "reference_points": null,
+        "auto_calculate": false,
+        "reference_image_dir": "assets/references/sc/port"
+      }
+    }
+  },
+  "colors": {
+    "reference_point": "#22c55e",
+    "calculated_point": "#3b82f6",
+    "manual_point": "#3b82f6",
+    "warning_point": "#f59e0b",
+    "active_button": "#facc15"
+  }
+}
