@@ -51,9 +51,20 @@ class MainWindow(QMainWindow):
         self.keypoint_buttons: Dict[str, KeypointButton] = {}
         self._undo_stack: List[tuple] = []  # (camera, object, label)
 
+        # Guided flow state. For Plug objects this is a 2-phase loop over
+        # the 3 cameras -- "green" (place only the reference points on
+        # left/center/right in turn) then "review" (revisit left/center/
+        # right once more, now showing the auto-calculated blue points for
+        # confirmation/override). Port objects use a single "single" phase
+        # since there is no reference/calculated split for them.
+        self.flow_object: Optional[str] = None
+        self.flow_stage: Optional[str] = None  # "green" | "review" | "single"
+        self.flow_order = ["left", "center", "right"]
+        self.flow_pos = 0
+
         self._build_ui()
         self._build_shortcuts()
-        self._goto_camera_menu()
+        self._goto_triplet_menu()
 
     # ------------------------------------------------------------------
     def _fit_window_to_screen(self):
@@ -169,11 +180,14 @@ class MainWindow(QMainWindow):
         self.keypoint_buttons.clear()
 
     # ------------------------------------------------------------------
-    # Stage: choose camera (left/center/right) for the current triplet
+    # Triplet-level menu: choose Plug or Port (guided flow across all 3
+    # camera views), or navigate/skip the whole triplet.
     # ------------------------------------------------------------------
-    def _goto_camera_menu(self):
+    def _goto_triplet_menu(self):
         self.current_camera = None
         self.current_object = None
+        self.flow_object = None
+        self.flow_stage = None
         self.armed_label = None
         self.canvas.arm_placement(False)
         self._clear_left_panel()
@@ -188,19 +202,21 @@ class MainWindow(QMainWindow):
         title.setFont(QFont("", 13, QFont.Bold))
         self.left_layout.addWidget(title)
 
-        box = QGroupBox("Select camera view")
+        cam_status = QLabel(self._camera_status_summary(triplet))
+        cam_status.setWordWrap(True)
+        self.left_layout.addWidget(cam_status)
+
+        box = QGroupBox("Label")
         vbox = QVBoxLayout(box)
-        for cam in ("left", "center", "right"):
-            cs = triplet.cameras[cam]
-            missing = not triplet.image_paths.get(cam)
-            status_bits = []
-            for obj in ("plug", "port"):
-                status_bits.append(f"{obj}:{cs[obj]['status']}")
-            btn = QPushButton(f"{cam.capitalize()}  [{', '.join(status_bits)}]" + ("  (missing image)" if missing else ""))
-            btn.setMinimumHeight(40)
-            if missing:
-                btn.setEnabled(False)
-            btn.clicked.connect(lambda _, c=cam: self._goto_object_menu(c))
+        for obj in ("plug", "port"):
+            statuses = [triplet.cameras[cam][obj]["status"] for cam in self.flow_order]
+            n_done = sum(1 for s in statuses if s in (st.STATUS_DONE, st.STATUS_SKIPPED))
+            fully_resolved = n_done == 3
+            btn = QPushButton(f"{obj.capitalize()}  ({n_done}/3 views resolved)")
+            btn.setMinimumHeight(50)
+            btn.setFont(QFont("", 12, QFont.Bold))
+            btn.setEnabled(not fully_resolved)
+            btn.clicked.connect(lambda _, o=obj: self._start_flow(o))
             vbox.addWidget(btn)
         self.left_layout.addWidget(box)
 
@@ -222,90 +238,103 @@ class MainWindow(QMainWindow):
         self.canvas._scene.clear()
         self.status_label.setText("")
 
+    def _camera_status_summary(self, triplet: st.TripletState) -> str:
+        lines = []
+        for cam in self.flow_order:
+            cs = triplet.cameras[cam]
+            missing = not triplet.image_paths.get(cam)
+            bits = f"plug:{cs['plug']['status']}  port:{cs['port']['status']}"
+            lines.append(f"{cam}: {'MISSING IMAGE' if missing else bits}")
+        return "\n".join(lines)
+
     def _prev_triplet(self):
         if self.idx > 0:
             self.idx -= 1
-            self._goto_camera_menu()
+            self._goto_triplet_menu()
 
     def _next_triplet(self):
         if self.idx < len(self.triplets) - 1:
             self.idx += 1
-            self._goto_camera_menu()
+            self._goto_triplet_menu()
         else:
             QMessageBox.information(self, "Done", "This is the last triplet.")
 
     def _skip_triplet(self):
         triplet = self.triplets[self.idx]
-        for cam in ("left", "center", "right"):
+        for cam in self.flow_order:
             triplet.mark_camera_status(cam, st.STATUS_SKIPPED)
             triplet.mark_object_status(cam, "plug", st.STATUS_SKIPPED)
             triplet.mark_object_status(cam, "port", st.STATUS_SKIPPED)
         self._next_triplet()
 
     # ------------------------------------------------------------------
-    # Stage: choose Plug / Port for the chosen camera
+    # Guided flow: for "plug" this is 2 phases (green, then review), each a
+    # left -> center -> right pass; for "port" it is a single manual pass.
     # ------------------------------------------------------------------
-    def _goto_object_menu(self, camera: str):
-        self.current_camera = camera
-        self.current_object = None
-        self.armed_label = None
-        self.canvas.arm_placement(False)
-        self._clear_left_panel()
+    def _start_flow(self, obj_type: str):
+        self.flow_object = obj_type
+        cfg = self.config.object_config(self.route, obj_type)
+        self.flow_stage = "green" if cfg["reference_points"] else "single"
+        self.flow_pos = 0
+        self._advance_to_next_flow_step(entering=True)
 
+    def _camera_needs_visit(self, camera: str, obj_type: str, stage: str) -> bool:
         triplet = self.triplets[self.idx]
-        img_path = triplet.image_paths.get(camera, "")
-        if img_path:
-            self.canvas.load_image(img_path)
-        self.status_label.setText(f"{camera} image loaded" if img_path else "no image")
+        status = triplet.cameras[camera][obj_type]["status"]
+        if status == st.STATUS_SKIPPED:
+            return False
+        if stage == "green":
+            # Green already placed (partial/done) -> nothing to do in this phase.
+            return status == st.STATUS_NOT_STARTED
+        # review / single: only fully-done views can be skipped over.
+        return status != st.STATUS_DONE
 
-        title = QLabel(f"{camera.capitalize()} image -- choose object to label")
-        title.setFont(QFont("", 13, QFont.Bold))
-        self.left_layout.addWidget(title)
-
-        cs = triplet.cameras[camera]
-        for obj in ("plug", "port"):
-            done = cs[obj]["status"] in (st.STATUS_DONE, st.STATUS_SKIPPED)
-            btn = QPushButton(f"{obj.capitalize()}  [{cs[obj]['status']}]")
-            btn.setMinimumHeight(44)
-            btn.setEnabled(not done)
-            btn.clicked.connect(lambda _, o=obj: self._goto_labeling(o))
-            self.left_layout.addWidget(btn)
-
-        skip_btn = QPushButton("Skip this camera image entirely")
-        skip_btn.clicked.connect(self._skip_camera)
-        self.left_layout.addWidget(skip_btn)
-
-        back_btn = QPushButton("< Back")
-        back_btn.clicked.connect(self._goto_camera_menu)
-        self.left_layout.addWidget(back_btn)
-
-        if all(cs[o]["status"] in (st.STATUS_DONE, st.STATUS_SKIPPED) for o in ("plug", "port")):
-            next_btn = QPushButton("Both done -- continue")
-            next_btn.clicked.connect(self._advance_after_camera)
-            self.left_layout.addWidget(next_btn)
-
-    def _skip_camera(self):
-        triplet = self.triplets[self.idx]
-        triplet.mark_object_status(self.current_camera, "plug", st.STATUS_SKIPPED)
-        triplet.mark_object_status(self.current_camera, "port", st.STATUS_SKIPPED)
-        triplet.mark_camera_status(self.current_camera, st.STATUS_SKIPPED)
-        self._advance_after_camera()
-
-    def _advance_after_camera(self):
-        order = ["left", "center", "right"]
-        i = order.index(self.current_camera)
-        if i + 1 < len(order):
-            self._goto_object_menu(order[i + 1])
+    def _advance_to_next_flow_step(self, entering: bool = False):
+        """Move flow_pos forward, skipping cameras that don't need this
+        stage, until we land on one that does or run out -- in which case
+        the stage (or the whole flow) is complete."""
+        if not entering:
+            self.flow_pos += 1
+        while self.flow_pos < len(self.flow_order):
+            cam = self.flow_order[self.flow_pos]
+            missing_image = not self.triplets[self.idx].image_paths.get(cam)
+            if missing_image:
+                self.triplets[self.idx].mark_object_status(cam, self.flow_object, st.STATUS_SKIPPED)
+                self.flow_pos += 1
+                continue
+            if self._camera_needs_visit(cam, self.flow_object, self.flow_stage):
+                break
+            self.flow_pos += 1
         else:
-            self._goto_camera_menu()
-            if self.idx < len(self.triplets) - 1 and self.triplets[self.idx].is_fully_resolved():
+            self._flow_stage_complete()
+            return
+        self._enter_flow_step()
+
+    def _flow_stage_complete(self):
+        if self.flow_stage == "green":
+            self._try_auto_calculate(self.flow_object)
+            self.flow_stage = "review"
+            self.flow_pos = 0
+            self._advance_to_next_flow_step(entering=True)
+        else:
+            # "review" or "single" stage finished -> this object is done
+            # for the whole triplet. Back to the Plug/Port menu.
+            self.flow_object = None
+            self.flow_stage = None
+            self._goto_triplet_menu()
+            triplet = self.triplets[self.idx]
+            if triplet.is_fully_resolved() and self.idx < len(self.triplets) - 1:
                 self._next_triplet()
 
+    def _enter_flow_step(self):
+        self.current_camera = self.flow_order[self.flow_pos]
+        self.current_object = self.flow_object
+        self._goto_labeling(self.flow_object)
+
     # ------------------------------------------------------------------
-    # Stage: labeling one object (plug or port) on one camera image
+    # Labeling UI for one (camera, object) step of the guided flow.
     # ------------------------------------------------------------------
     def _goto_labeling(self, obj_type: str):
-        self.current_object = obj_type
         self.armed_label = None
         self._clear_left_panel()
 
@@ -313,10 +342,24 @@ class MainWindow(QMainWindow):
         labels = cfg["labels"]
         ref_cfg = cfg["reference_points"]
         camera = self.current_camera
+        stage = self.flow_stage
         required_here = ref_cfg[camera] if ref_cfg else labels
 
-        title = QLabel(f"{self.route.upper()} {obj_type.capitalize()} -- {camera}")
-        title.setFont(QFont("", 13, QFont.Bold))
+        triplet = self.triplets[self.idx]
+        img_path = triplet.image_paths.get(camera, "")
+        if img_path:
+            self.canvas.load_image(img_path)
+
+        cam_num = self.flow_order.index(camera) + 1
+        if stage == "green":
+            phase_text = f"Phase 1/2 -- REFERENCE POINTS ONLY"
+        elif stage == "review":
+            phase_text = f"Phase 2/2 -- REVIEW / COMPLETE ALL POINTS"
+        else:
+            phase_text = "Label all points"
+        title = QLabel(f"{self.route.upper()} {obj_type.capitalize()}\n"
+                        f"{phase_text}\n{camera.upper()}  ({cam_num}/3)")
+        title.setFont(QFont("", 12, QFont.Bold))
         self.left_layout.addWidget(title)
 
         ref_img_path = self.config.reference_image_path(self.route, obj_type, camera)
@@ -329,20 +372,31 @@ class MainWindow(QMainWindow):
         ref_label.setFrameShape(QFrame.Box)
         self.left_layout.addWidget(ref_label)
 
-        if ref_cfg:
-            hint = QLabel(f"Green = place manually first: {', '.join(required_here)}\n"
-                           f"Blue = auto-calculated once >=2 views' greens are placed "
-                           f"(click to override).")
+        if ref_cfg and stage == "green":
+            hint = QLabel(f"Place these {len(required_here)} reference points, in any order: "
+                           f"{', '.join(required_here)}.\nThe other points are calculated "
+                           f"automatically once left+right (and center) reference points are all in --"
+                           f" you'll review/adjust them in Phase 2.")
+        elif ref_cfg and stage == "review":
+            if self.calibration:
+                hint = QLabel("Green = your reference points (still editable). "
+                               "Blue = auto-calculated -- click a blue button to override it manually. "
+                               "Orange = auto-calc disagreement warning, check it carefully.")
+            else:
+                hint = QLabel("No calibration loaded -- nothing was auto-calculated. "
+                               "Place every remaining (blue) point manually.")
         else:
-            hint = QLabel("All points must be placed manually for this object.")
+            hint = QLabel("Place every point manually for this object.")
         hint.setWordWrap(True)
         self.left_layout.addWidget(hint)
 
         btn_box = QGroupBox("Keypoints")
         grid = QVBoxLayout(btn_box)
-        triplet = self.triplets[self.idx]
         points = triplet.get_points(camera, obj_type)
+        visible_labels = required_here if (ref_cfg and stage == "green") else labels
         for i, label in enumerate(labels):
+            if label not in visible_labels:
+                continue
             btn = KeypointButton(label, i)
             is_ref = (not ref_cfg) or (label in required_here)
             placed = label in points
@@ -369,8 +423,8 @@ class MainWindow(QMainWindow):
         self.next_btn.clicked.connect(self._finish_object)
         self.left_layout.addWidget(self.next_btn)
 
-        back_btn = QPushButton("< Back")
-        back_btn.clicked.connect(lambda: self._goto_object_menu(camera))
+        back_btn = QPushButton("< Back to Plug/Port menu")
+        back_btn.clicked.connect(self._goto_triplet_menu)
         self.left_layout.addWidget(back_btn)
 
         self._redraw_points()
@@ -420,7 +474,7 @@ class MainWindow(QMainWindow):
         if self.current_object is None:
             return
         labels = self.config.labels(self.route, self.current_object)
-        if 0 <= index < len(labels):
+        if 0 <= index < len(labels) and labels[index] in self.keypoint_buttons:
             self._arm_label(labels[index])
 
     def _clear_armed_point(self):
@@ -447,16 +501,19 @@ class MainWindow(QMainWindow):
         cfg = self.config.object_config(self.route, obj_type)
         ref_cfg = cfg["reference_points"]
         required_here = ref_cfg[camera] if ref_cfg else cfg["labels"]
-        source = "manual"
+        # A manual click on a required (green) point is just "manual". A
+        # manual click on a non-reference (blue) point -- only possible
+        # during the "review" phase -- is an explicit override of whatever
+        # auto-calc put there, and must never be silently recomputed away.
+        source = "manual" if (not ref_cfg or label in required_here) else "manual_override"
         triplet.set_point(camera, obj_type, label, x, y, source)
         self._undo_stack.append((camera, obj_type, label))
         self._goto_labeling(obj_type)
-
-        # try auto-calc if this completed the reference set for a plug-type object
-        if ref_cfg and self.config.auto_calculate(self.route, obj_type):
-            points = triplet.get_points(camera, obj_type)
-            if all(l in points for l in required_here):
-                self._try_auto_calculate(obj_type)
+        # NOTE: auto-calc is intentionally NOT triggered here. It runs
+        # exactly once, explicitly, when the whole "green" phase finishes
+        # across all 3 views (see _flow_stage_complete) -- not per-point
+        # placement, which would race ahead and finish the object before
+        # the user ever reaches the review phase they asked to see.
 
     def _try_auto_calculate(self, obj_type: str):
         cfg = self.config.object_config(self.route, obj_type)
@@ -508,27 +565,23 @@ class MainWindow(QMainWindow):
                 if existing.get(label, {}).get("source") == "manual_override":
                     continue
                 triplet.set_point(cam, obj_type, label, x, y, source)
-
-            # A camera left "partial" (green done, blue pending a 2nd view)
-            # is now fully placed -- promote it to done automatically so the
-            # user isn't forced to revisit and click Next again just to
-            # acknowledge points that just got filled in.
-            if triplet.cameras[cam][obj_type]["status"] == st.STATUS_PARTIAL:
-                all_labels_now = triplet.get_points(cam, obj_type)
-                if all(l in all_labels_now for l in labels):
-                    triplet.mark_object_status(cam, obj_type, st.STATUS_DONE)
+            # Deliberately NOT auto-promoting "partial" -> "done" here: the
+            # guided flow's whole point is a mandatory review pass over the
+            # newly-calculated blue points before an object counts as done
+            # for a camera -- auto-completing it here would silently skip
+            # that check the user explicitly asked for.
 
         if self.current_object == obj_type:
             self._goto_labeling(obj_type)
 
     def _required_labels_for_next(self, camera: str, obj_type: str):
-        """What must be placed before you can move on: the reference (green)
-        set for Plug objects (blue points may still be pending on a 2nd/3rd
-        view before auto-calc can run), or every label for Port objects
-        (nothing is auto-calculated there)."""
+        """What must be placed before you can move on. During the "green"
+        phase, only the reference set is required (blue points come later,
+        once >=2 views' greens are in). During "review"/"single", every
+        label is required."""
         cfg = self.config.object_config(self.route, obj_type)
         ref_cfg = cfg["reference_points"]
-        if ref_cfg:
+        if ref_cfg and self.flow_stage == "green":
             return ref_cfg[camera]
         return cfg["labels"]
 
@@ -548,18 +601,17 @@ class MainWindow(QMainWindow):
         points = triplet.get_points(camera, obj_type)
         required = self._required_labels_for_next(camera, obj_type)
         if not all(l in points for l in required):
-            QMessageBox.warning(self, "Incomplete",
-                                  "Required (green) keypoints for this view are not all placed yet.")
+            QMessageBox.warning(self, "Incomplete", "Required keypoints for this step are not all placed yet.")
             return
         fully_placed = all(l in points for l in labels)
         triplet.mark_object_status(camera, obj_type, st.STATUS_DONE if fully_placed else st.STATUS_PARTIAL)
-        self._goto_object_menu(camera)
+        self._advance_to_next_flow_step()
 
     def _skip_object(self):
         camera, obj_type = self.current_camera, self.current_object
         triplet = self.triplets[self.idx]
         triplet.mark_object_status(camera, obj_type, st.STATUS_SKIPPED)
-        self._goto_object_menu(camera)
+        self._advance_to_next_flow_step()
 
     def _on_enter_pressed(self):
         if self.current_object is not None and self.next_btn.isEnabled():
@@ -568,8 +620,6 @@ class MainWindow(QMainWindow):
     def _on_skip_pressed(self):
         if self.current_object is not None:
             self._skip_object()
-        elif self.current_camera is not None:
-            self._skip_camera()
 
     # ------------------------------------------------------------------
     def _on_roi_select(self):
@@ -600,4 +650,4 @@ class MainWindow(QMainWindow):
         self.folder = Path(folder)
         self.triplets = st.load_or_init_states(self.folder, self.route)
         self.idx = st.first_unresolved_index(self.triplets)
-        self._goto_camera_menu()
+        self._goto_triplet_menu()
