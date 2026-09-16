@@ -43,18 +43,29 @@ class ModeDialog(QDialog):
 
 def choose_folder(parent=None) -> Optional[Path]:
     """Folder picker; validates that left/center/right subfolders exist
-    (warns but still allows -- discover_triplets tolerates missing views)."""
+    (warns but still allows -- discover_triplets tolerates missing views).
+
+    Uses Qt's own (non-native) dialog: the native GTK/portal dialog on some
+    Linux desktops (remote sessions, sandboxed/confined environments, some
+    Wayland compositors) can hand back a path string that doesn't match what
+    the filesystem actually has mounted (e.g. a stale/rewritten prefix for
+    removable media), which made a perfectly correct folder look "missing"
+    every subfolder. Qt's built-in dialog reads the same filesystem view
+    this process will use to check `is_dir()`, so the two can't disagree.
+    """
     folder = QFileDialog.getExistingDirectory(
-        parent, "Select folder containing left/center/right subfolders"
+        parent, "Select folder containing left/center/right subfolders",
+        "", QFileDialog.ShowDirsOnly | QFileDialog.DontUseNativeDialog,
     )
     if not folder:
         return None
-    path = Path(folder)
+    path = Path(folder).resolve()
     missing = [c for c in ("left", "center", "right") if not (path / c).is_dir()]
     if missing:
         QMessageBox.warning(
             parent, "Missing camera subfolders",
-            f"This folder is missing: {', '.join(missing)}. "
+            f"This folder is missing: {', '.join(missing)}.\n\n"
+            f"Resolved path checked: {path}\n\n"
             f"Those views will be treated as absent and must be skipped per triplet."
         )
     return path
@@ -63,6 +74,7 @@ def choose_folder(parent=None) -> Optional[Path]:
 def choose_calibration(parent=None) -> Optional[Path]:
     path, _ = QFileDialog.getOpenFileName(
         parent, "Select calibration.json (optional -- Cancel to skip)",
-        str(Path(__file__).resolve().parent.parent), "JSON files (*.json)"
+        str(Path(__file__).resolve().parent.parent), "JSON files (*.json)",
+        "", QFileDialog.DontUseNativeDialog,
     )
-    return Path(path) if path else None
+    return Path(path).resolve() if path else None
