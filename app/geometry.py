@@ -1,22 +1,31 @@
 """Reference-point -> full-keypoint-set math.
 
 Ported and generalized from the validated SFP/SC plug math built earlier
-(run_sfp_reference_point_math.py / run_sc_reference_point_math.py). Same
-approach, same caveats:
+(run_sfp_reference_point_math.py / run_sc_reference_point_math.py). Handles
+any per-camera reference-point count/geometry, not just the original 3-point
+coplanar case:
 
-  - The per-camera reference-point sets are coplanar, so a single camera's
-    3-point PnP has a genuine 2-fold mirror-branch ambiguity (solveP3P
-    returns up to 4 solutions; reprojection error on the 3 points used to
-    solve is ~0 for every branch -- it cannot distinguish the real one).
-  - Disambiguation requires >= 2 cameras that each have >= 3 reference
-    points placed: every (branch, branch) pair across those two cameras is
-    converted into a common frame (tool0) and the pair with the SMALLEST
-    disagreement is kept. A correct pair agrees to a few mm / ~1 degree; a
-    mirror-mismatched pair disagrees by tens of mm / tens of degrees.
-  - A camera with only 2 reference points (e.g. "center" in this project's
-    default config) can never independently resolve a pose; it only
-    *receives* the fused pose, transformed into its own camera frame via the
-    calibrated rig extrinsics.
+  - Exactly 3 reference points -> P3P. If those 3 are coplanar (the original
+    default config), there is a genuine 2-fold mirror-branch ambiguity
+    (solveP3P returns up to 4 solutions; reprojection error on the 3 points
+    used to solve is ~0 for every branch -- it cannot distinguish the real
+    one on its own).
+  - >=4 reference points that are still coplanar -> IPPE, which explicitly
+    returns its own 2-fold ambiguity as 2 branches (same underlying issue,
+    just solved with more points).
+  - >=4 reference points that are NOT coplanar (e.g. a config that mixes a
+    near-face point with a depth-extended point, so the set spans more than
+    one plane) -> SQPNP, a single well-posed solution with no mirror
+    ambiguity to resolve.
+  - Whatever the branch count per camera, disambiguation always works the
+    same way: >= 2 cameras that each have all their reference points placed
+    contribute their branch(es); every (branch, branch) pair across those
+    cameras is converted into a common frame (tool0) and the pair with the
+    SMALLEST disagreement is kept. A correct pair agrees to a few mm / ~1
+    degree; a mirror-mismatched pair disagrees by tens of mm / tens of
+    degrees. A camera with only 1 or 2 reference points can never
+    independently resolve a pose; it only *receives* the fused pose,
+    transformed into its own camera frame via the calibrated rig extrinsics.
 """
 from __future__ import annotations
 
@@ -59,8 +68,32 @@ def _camera_matrix(K: np.ndarray, T_tool0_from_cam: np.ndarray) -> np.ndarray:
     return K @ T_cam_from_tool0[:3, :4]
 
 
-def _solve_p3p_branches(obj_pts: np.ndarray, img_pts: np.ndarray, K: np.ndarray, dist: np.ndarray):
-    n, rvecs, tvecs = cv2.solveP3P(obj_pts, img_pts, K, dist, flags=cv2.SOLVEPNP_AP3P)
+def _is_coplanar(pts: np.ndarray, tol: float = 1e-4) -> bool:
+    """True if pts (Nx3) lie (near-)exactly on a common plane -- checked via
+    the smallest singular value of the centered point set relative to the
+    object's own scale, not an absolute threshold."""
+    centered = pts - pts.mean(axis=0)
+    scale = max(float(np.linalg.norm(centered, axis=1).max()), 1e-9)
+    s = np.linalg.svd(centered, compute_uv=False)
+    return bool(s[-1] / scale < tol)
+
+
+def _solve_pose_branches(obj_pts: np.ndarray, img_pts: np.ndarray, K: np.ndarray, dist: np.ndarray):
+    """Return every mathematically valid (R, t) branch for this point set.
+
+    3 points -> P3P (up to 4 branches, coplanar-mirror ambiguity expected).
+    >=4 coplanar points -> IPPE (2 branches -- still ambiguous in general,
+    e.g. this project's "center" camera reference set once extended with
+    non-coplanar-breaking points can still end up coplanar on its own).
+    >=4 non-coplanar points -> SQPNP (1 branch; a well-conditioned
+    non-coplanar set has no mirror ambiguity to resolve)."""
+    n = len(obj_pts)
+    if n == 3:
+        _, rvecs, tvecs = cv2.solveP3P(obj_pts, img_pts, K, dist, flags=cv2.SOLVEPNP_AP3P)
+    elif _is_coplanar(obj_pts):
+        _, rvecs, tvecs, _ = cv2.solvePnPGeneric(obj_pts, img_pts, K, dist, flags=cv2.SOLVEPNP_IPPE)
+    else:
+        _, rvecs, tvecs, _ = cv2.solvePnPGeneric(obj_pts, img_pts, K, dist, flags=cv2.SOLVEPNP_SQPNP)
     branches = []
     for rvec, tvec in zip(rvecs, tvecs):
         R, _ = cv2.Rodrigues(rvec)
@@ -162,9 +195,11 @@ def auto_calculate(
         img_pts = np.asarray([points_by_camera_px[cam][l] for l in refs], dtype=np.float64)
         calib = calibration[cam]
         try:
-            branches_by_cam[cam] = _solve_p3p_branches(obj_pts, img_pts, calib.K, calib.dist)
+            branches_by_cam[cam] = _solve_pose_branches(obj_pts, img_pts, calib.K, calib.dist)
         except cv2.error as exc:
-            return AutoCalcResult(success=False, reason=f"solveP3P failed on {cam}: {exc}")
+            return AutoCalcResult(success=False, reason=f"pose solve failed on {cam}: {exc}")
+        if not branches_by_cam[cam]:
+            return AutoCalcResult(success=False, reason=f"pose solve returned no solution on {cam}")
 
     # Try every pair of solvable cameras, every branch combination; keep the
     # globally best-agreeing (cam_a, branch_i, cam_b, branch_j).
