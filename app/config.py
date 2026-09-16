@@ -41,6 +41,17 @@ class AppConfig:
     def auto_calculate(self, route: str, obj_type: str) -> bool:
         return bool(self.object_config(route, obj_type)["auto_calculate"])
 
+    def midpoint_of(self, route: str, obj_type: str) -> dict:
+        """{target_label: [parent_a, parent_b]} -- labels defined as the
+        real 3D midpoint of two other labels. Where both parents are
+        already placed in the SAME camera view, the target can be filled
+        directly as the 2-D pixel midpoint in that image -- no calibration
+        or 3-D triangulation needed, and no cross-camera-agreement error to
+        inherit. Only labels that can't be filled this way in a given
+        camera (a parent missing/not visible there) fall back to the
+        calibrated multi-view pipeline."""
+        return self.object_config(route, obj_type).get("midpoint_of") or {}
+
     def reference_image_path(self, route: str, obj_type: str, camera: str) -> Path:
         rel = self.object_config(route, obj_type)["reference_image_dir"]
         return APP_ROOT / rel / f"{camera}.png"

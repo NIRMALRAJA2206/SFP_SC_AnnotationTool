@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QFileDialog, QFrame, QGroupBox, QHBoxLayout,
 from . import state as st
 from .canvas import ImageCanvas
 from .config import AppConfig, load_calibration
-from .geometry import auto_calculate
+from .geometry import auto_calculate, compute_direct_midpoints
 from .exporter import export_route_object
 
 REF_GREEN = "reference"
@@ -435,6 +435,8 @@ class MainWindow(QMainWindow):
             color = self.config.color("warning_point")
         elif is_ref:
             color = self.config.color("reference_point")
+        elif source == "midpoint_2d":
+            color = self.config.color("midpoint_2d_point")
         else:
             color = self.config.color("calculated_point")
         btn.setStyleSheet(
@@ -459,6 +461,8 @@ class MainWindow(QMainWindow):
                 color = self.config.color("warning_point")
             elif is_ref:
                 color = self.config.color("reference_point")
+            elif source == "midpoint_2d":
+                color = self.config.color("midpoint_2d_point")
             else:
                 color = self.config.color("calculated_point")
             self.canvas.set_point(label, p["x"], p["y"], color)
@@ -520,6 +524,7 @@ class MainWindow(QMainWindow):
         ref_cfg = cfg["reference_points"]
         labels = cfg["labels"]
         local_kps = self.config.local_keypoints(self.route, obj_type)
+        midpoint_of = self.config.midpoint_of(self.route, obj_type)
         triplet = self.triplets[self.idx]
 
         points_by_camera = {}
@@ -529,9 +534,39 @@ class MainWindow(QMainWindow):
             if cam_pts:
                 points_by_camera[cam] = cam_pts
 
+        # Step 1: fill anything computable as a direct 2-D pixel midpoint,
+        # per camera, with no calibration and no 3-D triangulation -- this
+        # can't inherit calibration/cross-camera-agreement error, so prefer
+        # it wherever both parent points are already placed in the same view.
+        direct_filled_msgs = []
+        if midpoint_of:
+            direct = compute_direct_midpoints(midpoint_of, points_by_camera)
+            for cam, cam_points in direct.items():
+                for label, (x, y) in cam_points.items():
+                    triplet.set_point(cam, obj_type, label, x, y, "midpoint_2d")
+                    points_by_camera.setdefault(cam, {})[label] = (x, y)
+                direct_filled_msgs.append(f"{cam}:{sorted(cam_points.keys())}")
+        if direct_filled_msgs:
+            self.status_label.setText("Direct 2-D midpoint filled -- " + ", ".join(direct_filled_msgs))
+
+        # Step 2: only labels NOT covered by step 1 need the calibrated
+        # multi-view pipeline at all (e.g. a point whose midpoint parent
+        # isn't visible/manual in that particular camera).
+        still_needed_any = any(
+            label not in points_by_camera.get(cam, {})
+            for cam in ("left", "center", "right")
+            for label in labels
+            if label not in ref_cfg.get(cam, [])
+        )
+        if not still_needed_any:
+            if self.current_object == obj_type:
+                self._goto_labeling(obj_type)
+            return
+
         if not self.calibration:
             self.status_label.setText(
-                "No calibration loaded -- blue points must be placed manually."
+                (self.status_label.text() + "  " if direct_filled_msgs else "")
+                + "No calibration loaded -- remaining points must be placed manually."
             )
             return
 
@@ -561,8 +596,10 @@ class MainWindow(QMainWindow):
                 if label in required_cam:
                     continue  # never overwrite a manually-placed reference point
                 x, y = float(pts[i][0]), float(pts[i][1])
-                # keep a manual override if the user already adjusted this blue point
-                if existing.get(label, {}).get("source") == "manual_override":
+                # Never overwrite a manual override, or a value already
+                # filled by the (preferred, calibration-free) direct 2-D
+                # midpoint pass above.
+                if existing.get(label, {}).get("source") in ("manual_override", "midpoint_2d"):
                     continue
                 triplet.set_point(cam, obj_type, label, x, y, source)
             # Deliberately NOT auto-promoting "partial" -> "done" here: the

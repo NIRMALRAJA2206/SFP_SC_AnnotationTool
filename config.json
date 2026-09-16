@@ -26,6 +26,12 @@
           "center": ["a3", "a4", "a11", "a12"],
           "right": ["a1", "a3", "a4", "a9", "a11", "a12"]
         },
+        "midpoint_of": {
+          "a5": ["a1", "a9"],
+          "a6": ["a2", "a10"],
+          "a7": ["a3", "a11"],
+          "a8": ["a4", "a12"]
+        },
         "auto_calculate": true,
         "reference_image_dir": "assets/references/sfp/plug"
       },
@@ -71,6 +77,7 @@
     "reference_point": "#22c55e",
     "calculated_point": "#3b82f6",
     "manual_point": "#3b82f6",
+    "midpoint_2d_point": "#14b8a6",
     "warning_point": "#f59e0b",
     "active_button": "#facc15"
   }

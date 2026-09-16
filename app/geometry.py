@@ -52,6 +52,46 @@ class CameraCalibration:
         )
 
 
+def compute_direct_midpoints(
+    midpoint_of: Dict[str, List[str]],
+    points_by_camera_px: Dict[str, Dict[str, Tuple[float, float]]],
+) -> Dict[str, Dict[str, Tuple[float, float]]]:
+    """Fill any midpoint-defined label directly as the 2-D pixel average of
+    its two parent labels, PER CAMERA, wherever both parents are already
+    placed in that same image.
+
+    This deliberately needs no calibration and does no 3-D triangulation --
+    it is a genuinely different (and, for small close-range objects, often
+    more trustworthy) computation than reprojecting a fitted 3-D pose: it
+    can't inherit calibration error, cross-camera disagreement, or a wrong
+    assumed rigid-body dimension, because it never leaves 2-D pixel space
+    for that camera. The tradeoff, real and worth stating: a 2-D pixel
+    midpoint is not exactly the projection of the true 3-D midpoint under
+    perspective (only exact for orthographic projection or a fronto-parallel
+    line) -- for a small object at a working-distance standoff the
+    perspective error is normally far smaller than the calibration/geometry
+    errors it avoids, but it is not zero.
+
+    Returns only the newly-computed {camera: {label: (x, y)}} entries --
+    never overwrites an already-placed point (manual or otherwise); callers
+    decide what to do with a label that has no direct midpoint available in
+    a given camera (fall back to the calibrated multi-view pipeline).
+    """
+    out: Dict[str, Dict[str, Tuple[float, float]]] = {}
+    for cam, existing in points_by_camera_px.items():
+        cam_out = {}
+        for target, (parent_a, parent_b) in midpoint_of.items():
+            if target in existing:
+                continue
+            if parent_a in existing and parent_b in existing:
+                ax, ay = existing[parent_a]
+                bx, by = existing[parent_b]
+                cam_out[target] = ((ax + bx) / 2.0, (ay + by) / 2.0)
+        if cam_out:
+            out[cam] = cam_out
+    return out
+
+
 @dataclass
 class AutoCalcResult:
     success: bool
