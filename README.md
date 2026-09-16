@@ -19,24 +19,35 @@ any recent Python 3.9+.
    must be explicitly skipped.
 3. Optionally load a **calibration.json** (see below). Without one, all
    keypoints are placed manually (same as Port labeling always is).
-4. For each triplet: pick a camera view (Left/Center/Right), then Plug or
-   Port. Reference image for that route/object/camera is shown at the top
-   of the left panel. Click a keypoint button to "arm" it, then click the
-   point's location on the image (right panel) to place it. Click again to
-   replace a mistaken placement.
+4. For each triplet, pick **Plug** or **Port** once (not per camera) --
+   the tool then guides you through a fixed sequence:
+   - **Plug** (2 phases): **Phase 1** walks Left -> Center -> Right, showing
+     only the green (reference) keypoint buttons -- place just those, in
+     any order, then click Next to move to the next camera. Once all 3
+     views' reference points are in, auto-calc runs once and **Phase 2**
+     starts: Left -> Center -> Right again, now showing every point (green
+     + the auto-calculated blue ones) so you can review and, if needed,
+     click a blue button to manually override it before clicking Next.
+   - **Port** (1 phase): Left -> Center -> Right, all keypoints manual (no
+     green/blue split), click Next after each.
+   Reference image for that route/object/camera is shown at the top of the
+   left panel throughout. Click a keypoint button to "arm" it, then click
+   the point's location on the image (right panel) to place it. Click again
+   to replace a mistaken placement.
 5. **ROI zoom**: "Select ROI" then drag a box on the image, "Confirm ROI" to
    zoom into it (label sub-pixel-accurately), "Reset ROI" to see the whole
    image again.
-6. For **Plug** objects with a calibration loaded: place the green
-   (reference) points first. Once >=2 camera views have their full
-   reference set placed, the remaining blue points are auto-calculated and
-   drawn -- click a blue button to manually override any of them.
-7. **Skip** is available at every level (a whole triplet, one camera image,
-   or just Plug/Port for that image) -- real data has occlusions and
-   missing views.
+6. A camera finished in Phase 1 (green done, blue not yet calculable) is
+   marked **partial** and is revisited automatically in Phase 2 -- it only
+   becomes **done** once you click Next during the review phase.
+7. **Skip** is available at every level (a whole triplet, or just Plug/Port
+   for the camera image currently shown) -- real data has occlusions and
+   missing views. A missing view in the triplet is skipped automatically.
 8. Progress saves after every single point placement
    (`<folder>/labels/<stem>.json`, atomic writes). Re-opening the same
-   folder resumes exactly where you left off; a fresh folder starts clean.
+   folder resumes exactly where you left off -- already-done or partial
+   cameras are skipped/revisited automatically within each phase; a fresh
+   folder starts clean.
 9. **File > Export YOLO-pose labels...** writes a ready-to-train dataset
    (`images/{train,val}`, `labels/{train,val}`, `dataset.yaml`, `manifest.json`)
    for every camera image marked "done" for that object.
