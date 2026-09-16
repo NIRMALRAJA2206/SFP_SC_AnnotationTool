@@ -10,7 +10,7 @@ Run: python main.py
 import sys
 from pathlib import Path
 
-from PySide6.QtWidgets import QApplication, QMessageBox
+from PySide6.QtWidgets import QApplication, QDialog, QMessageBox
 
 sys.path.insert(0, str(Path(__file__).resolve().parent))
 
@@ -24,7 +24,7 @@ def main():
     app.setStyle("Fusion")
 
     mode_dialog = ModeDialog()
-    if mode_dialog.exec() != mode_dialog.Accepted or not mode_dialog.route:
+    if mode_dialog.exec() != QDialog.Accepted or not mode_dialog.route:
         return 0
     route = mode_dialog.route
 
