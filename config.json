@@ -4,22 +4,22 @@
   "routes": {
     "sfp": {
       "plug": {
-        "_comment": "12-point model, per user's real caliper measurements of the physical SFP plug. Depth (insertion axis): a1-a4 = 0in (near/tip face), a5-a8 = 0.75in = 19.05mm, a9-a12 = 1.5in = 38.10mm. Cross-section, measured directly (2026-09-16): a1-a4 (height, y-axis) = 0.225in = 5.715mm full (half=2.8575mm) -- corrects the earlier sim-derived 7.6mm, a real ~25% difference and the likely main cause of a 9.3mm/2.66deg cross-camera pose disagreement seen on real data before this fix; a3-a4 (width, x-axis) = 0.5in = 12.7mm full (half=6.35mm) -- close to the sim's 12.8mm, negligible correction. The -0.0020 tip-face z-inset is a stability margin carried over from the sim model (keeps points slightly inside the visual tip edge for grazing-angle stability), not part of the measured depth.",
+        "_comment": "12-point model, per user's real caliper measurements of the physical SFP plug. Depth (insertion axis): a1-a4 = 0in (near/tip face), a5-a8 = 0.75in = 19.05mm, a9-a12 = 1.5in = 38.10mm (visible reference line, not the physical end of the part). Cross-section: a1-a4 (thickness, y-axis) = 0.275in = 6.985mm full (half=3.4925mm) -- corrected from an initial 0.225in reading after a real single-camera reprojection check (frame_001, calibration/camera-identity/depth all independently verified correct first) showed 0.275in roughly HALVES the per-point fit residual on both left (6.74px->4.29px mean) and right (8.03px->4.06px mean), computed with zero cross-camera math involved, isolating this as a genuine geometry correction rather than click-noise or a calibration artifact. a3-a4 (width, x-axis) = 0.5in = 12.7mm full (half=6.35mm), confirmed correct. Residual 4-6px per-point error remains even after this fix, concentrated on the a9-a12 far points -- still not fully explained, may indicate a9-a12 aren't exactly on the same x,y as a1-a4 (real housing taper/step at that depth) rather than a further cross-section correction. The -0.0020 tip-face z-inset is a stability margin carried over from the sim model, not part of the measured depth.",
         "labels": ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10", "a11", "a12"],
         "training_labels": ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"],
         "local_keypoints_m": [
-          [0.00635, 0.0028575, -0.0020],
-          [-0.00635, 0.0028575, -0.0020],
-          [-0.00635, -0.0028575, -0.0020],
-          [0.00635, -0.0028575, -0.0020],
-          [0.00635, 0.0028575, -0.02105],
-          [-0.00635, 0.0028575, -0.02105],
-          [-0.00635, -0.0028575, -0.02105],
-          [0.00635, -0.0028575, -0.02105],
-          [0.00635, 0.0028575, -0.0401],
-          [-0.00635, 0.0028575, -0.0401],
-          [-0.00635, -0.0028575, -0.0401],
-          [0.00635, -0.0028575, -0.0401]
+          [0.00635, 0.0034925, -0.0020],
+          [-0.00635, 0.0034925, -0.0020],
+          [-0.00635, -0.0034925, -0.0020],
+          [0.00635, -0.0034925, -0.0020],
+          [0.00635, 0.0034925, -0.02105],
+          [-0.00635, 0.0034925, -0.02105],
+          [-0.00635, -0.0034925, -0.02105],
+          [0.00635, -0.0034925, -0.02105],
+          [0.00635, 0.0034925, -0.0401],
+          [-0.00635, 0.0034925, -0.0401],
+          [-0.00635, -0.0034925, -0.0401],
+          [0.00635, -0.0034925, -0.0401]
         ],
         "reference_points": {
           "left": ["a2", "a3", "a4", "a10", "a11", "a12"],
