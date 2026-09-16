@@ -107,8 +107,23 @@ points are drawn in a warning color instead of the normal blue.
 `config.json` defines, per route (`sfp`/`sc`) and object (`plug`/`port`):
 `labels`, `local_keypoints_m` (the object's real rigid-body geometry, only
 needed for Plug auto-calc), `reference_points` (which labels are green per
-camera), and `reference_image_dir` (thumbnail shown while labeling). Edit
-this file to retarget the tool to a different connector or point layout.
+camera), `training_labels` (optional -- the subset of `labels` actually
+written to the exported dataset; defaults to all of `labels` if omitted),
+and `reference_image_dir` (thumbnail shown while labeling). Edit this file
+to retarget the tool to a different connector or point layout.
+
+**Example -- SFP plug**: `labels` has 12 points (a1-a12). a1-a8 are the
+model's real training targets (`training_labels`); a9-a12 are real measured
+points (not exported) used only to give left/right cameras a non-coplanar
+6-point reference set for auto-calc, which resolves pose directly with no
+mirror ambiguity (verified: a synthetic noiseless round-trip recovered the
+true pose to 1e-10mm). `reference_points` can have any per-camera count
+>=3; `geometry.py` automatically dispatches to P3P (exactly 3 points),
+IPPE (>=4 coplanar points), or SQPNP (>=4 non-coplanar points) and, for any
+of these, still cross-checks >=2 cameras' results against each other before
+accepting the result -- a real mirror-ambiguity mismatch disagrees by tens
+of mm/degrees, a genuine match by a few mm/~1 degree (see the disagreement
+math note in `geometry.py`'s module docstring).
 
 ## Project layout
 ```
