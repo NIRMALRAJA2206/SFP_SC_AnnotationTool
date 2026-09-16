@@ -4,7 +4,7 @@ from pathlib import Path
 from typing import Dict, List, Optional
 
 from PySide6.QtCore import Qt
-from PySide6.QtGui import QAction, QFont, QKeySequence, QPixmap, QShortcut
+from PySide6.QtGui import QAction, QFont, QGuiApplication, QKeySequence, QPixmap, QShortcut
 from PySide6.QtWidgets import (QFileDialog, QFrame, QGroupBox, QHBoxLayout,
                                  QLabel, QMainWindow, QMessageBox, QPushButton,
                                  QScrollArea, QSizePolicy, QSplitter,
@@ -40,7 +40,7 @@ class MainWindow(QMainWindow):
         self.config = config
         self.calibration = calibration or {}
         self.setWindowTitle(f"AT Labeling Tool -- {route.upper()}  [{folder}]")
-        self.resize(1500, 950)
+        self._fit_window_to_screen()
 
         self.triplets: List[st.TripletState] = st.load_or_init_states(folder, route)
         self.idx = st.first_unresolved_index(self.triplets)
@@ -56,6 +56,27 @@ class MainWindow(QMainWindow):
         self._goto_camera_menu()
 
     # ------------------------------------------------------------------
+    def _fit_window_to_screen(self):
+        """Size and position the window to always fit entirely inside the
+        current screen's available geometry (never taller/wider than the
+        display, never off the edge) -- no fixed pixel size assumption."""
+        screen = self.screen() or QGuiApplication.primaryScreen()
+        avail = screen.availableGeometry()
+        margin = 40
+        max_w, max_h = avail.width() - margin, avail.height() - margin
+        # Prefer 1500x950, but never exceed the screen; the "comfortable
+        # minimum" (900x600) is itself capped at the screen size too, so it
+        # can never push the window past the display on a small screen.
+        width = min(1500, max_w)
+        width = max(width, min(900, max_w))
+        height = min(950, max_h)
+        height = max(height, min(600, max_h))
+        self.resize(width, height)
+        self.move(
+            avail.x() + (avail.width() - self.width()) // 2,
+            avail.y() + (avail.height() - self.height()) // 2,
+        )
+
     def _build_ui(self):
         central = QWidget()
         self.setCentralWidget(central)
@@ -84,13 +105,20 @@ class MainWindow(QMainWindow):
         splitter = QSplitter(Qt.Horizontal)
         outer.addWidget(splitter, 1)
 
-        # left panel -----------------------------------------------------
+        # left panel -- inside a scroll area so a long keypoint-button list
+        # (or a small screen) never forces the window taller than the
+        # display; it scrolls internally instead. ------------------------
         left_container = QWidget()
-        left_container.setMinimumWidth(320)
-        left_container.setMaximumWidth(420)
         self.left_layout = QVBoxLayout(left_container)
         self.left_layout.setAlignment(Qt.AlignTop)
-        splitter.addWidget(left_container)
+
+        left_scroll = QScrollArea()
+        left_scroll.setWidgetResizable(True)
+        left_scroll.setWidget(left_container)
+        left_scroll.setMinimumWidth(320)
+        left_scroll.setMaximumWidth(420)
+        left_scroll.setHorizontalScrollBarPolicy(Qt.ScrollBarAlwaysOff)
+        splitter.addWidget(left_scroll)
 
         # right panel: canvas + ROI toolbar -------------------------------
         right_container = QWidget()
