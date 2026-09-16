@@ -65,6 +65,22 @@ class MainWindow(QMainWindow):
         self.progress_label.setFont(QFont("", 12, QFont.Bold))
         outer.addWidget(self.progress_label)
 
+        self.calibration_banner = QLabel()
+        self.calibration_banner.setFont(QFont("", 10, QFont.Bold))
+        if self.calibration:
+            self.calibration_banner.setText(
+                f"Calibration LOADED ({len(self.calibration)} cameras: {', '.join(self.calibration.keys())}) "
+                f"-- Plug auto-calc active once >=2 views' green points are placed."
+            )
+            self.calibration_banner.setStyleSheet("color: white; background-color: #166534; padding: 4px;")
+        else:
+            self.calibration_banner.setText(
+                "NO CALIBRATION LOADED -- all points (including Plug) must be placed manually. "
+                "Restart and load a calibration.json to enable auto-calc."
+            )
+            self.calibration_banner.setStyleSheet("color: white; background-color: #991b1b; padding: 4px;")
+        outer.addWidget(self.calibration_banner)
+
         splitter = QSplitter(Qt.Horizontal)
         outer.addWidget(splitter, 1)
 
@@ -436,7 +452,14 @@ class MainWindow(QMainWindow):
 
         result = auto_calculate(local_kps, labels, ref_cfg, points_by_camera, self.calibration)
         if not result.success:
-            self.status_label.setText(f"Auto-calc pending: {result.reason}")
+            solvable = [c for c, refs in ref_cfg.items() if len(refs) >= 3]
+            done_solvable = [c for c in solvable
+                              if all(l in points_by_camera.get(c, {}) for l in ref_cfg[c])]
+            still_needed = [c for c in solvable if c not in done_solvable]
+            self.status_label.setText(
+                f"Auto-calc pending -- needs green points on >=2 of {solvable} "
+                f"(done: {done_solvable or 'none'}; still needed: {still_needed})"
+            )
             return
 
         source = REF_WARN if result.warning else REF_CALC
@@ -458,18 +481,36 @@ class MainWindow(QMainWindow):
                     continue
                 triplet.set_point(cam, obj_type, label, x, y, source)
 
+            # A camera left "partial" (green done, blue pending a 2nd view)
+            # is now fully placed -- promote it to done automatically so the
+            # user isn't forced to revisit and click Next again just to
+            # acknowledge points that just got filled in.
+            if triplet.cameras[cam][obj_type]["status"] == st.STATUS_PARTIAL:
+                all_labels_now = triplet.get_points(cam, obj_type)
+                if all(l in all_labels_now for l in labels):
+                    triplet.mark_object_status(cam, obj_type, st.STATUS_DONE)
+
         if self.current_object == obj_type:
             self._goto_labeling(obj_type)
+
+    def _required_labels_for_next(self, camera: str, obj_type: str):
+        """What must be placed before you can move on: the reference (green)
+        set for Plug objects (blue points may still be pending on a 2nd/3rd
+        view before auto-calc can run), or every label for Port objects
+        (nothing is auto-calculated there)."""
+        cfg = self.config.object_config(self.route, obj_type)
+        ref_cfg = cfg["reference_points"]
+        if ref_cfg:
+            return ref_cfg[camera]
+        return cfg["labels"]
 
     def _update_next_enabled(self):
         obj_type = self.current_object
         camera = self.current_camera
-        cfg = self.config.object_config(self.route, obj_type)
-        labels = cfg["labels"]
         triplet = self.triplets[self.idx]
         points = triplet.get_points(camera, obj_type)
-        all_placed = all(l in points for l in labels)
-        self.next_btn.setEnabled(all_placed)
+        required = self._required_labels_for_next(camera, obj_type)
+        self.next_btn.setEnabled(all(l in points for l in required))
 
     def _finish_object(self):
         camera, obj_type = self.current_camera, self.current_object
@@ -477,10 +518,13 @@ class MainWindow(QMainWindow):
         cfg = self.config.object_config(self.route, obj_type)
         labels = cfg["labels"]
         points = triplet.get_points(camera, obj_type)
-        if not all(l in points for l in labels):
-            QMessageBox.warning(self, "Incomplete", "Not all keypoints are placed yet.")
+        required = self._required_labels_for_next(camera, obj_type)
+        if not all(l in points for l in required):
+            QMessageBox.warning(self, "Incomplete",
+                                  "Required (green) keypoints for this view are not all placed yet.")
             return
-        triplet.mark_object_status(camera, obj_type, st.STATUS_DONE)
+        fully_placed = all(l in points for l in labels)
+        triplet.mark_object_status(camera, obj_type, st.STATUS_DONE if fully_placed else st.STATUS_PARTIAL)
         self._goto_object_menu(camera)
 
     def _skip_object(self):
