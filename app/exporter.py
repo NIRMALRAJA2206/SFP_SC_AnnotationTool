@@ -22,7 +22,13 @@ def export_route_object(folder: Path, route: str, obj_type: str, config: AppConf
     labels_dir = folder / "labels"
     if not labels_dir.is_dir():
         return 0
-    label_defs = config.labels(route, obj_type)
+    # Only training_labels are written to the exported dataset -- e.g. SFP
+    # plug's a9-a12 are real measured points used to make the auto-calc fit
+    # more robust (non-coplanar reference sets), but are not themselves
+    # training targets; a1-a8 are. Completeness ("is this camera done?")
+    # still checks against ALL labels via triplet status, since the guided
+    # flow only marks an object DONE once every point (a1-a12) is placed.
+    label_defs = config.training_labels(route, obj_type)
     dataset_dir = out_root / f"{route}_{obj_type}"
     for split in ("train", "val"):
         (dataset_dir / "images" / split).mkdir(parents=True, exist_ok=True)

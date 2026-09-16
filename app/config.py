@@ -21,6 +21,16 @@ class AppConfig:
     def labels(self, route: str, obj_type: str):
         return self.object_config(route, obj_type)["labels"]
 
+    def training_labels(self, route: str, obj_type: str):
+        """The subset of `labels` actually written to the exported training
+        dataset. Defaults to all labels; a config entry can restrict this
+        (e.g. SFP plug uses a1-a12 internally as reference/auto-calc aids
+        for a more robust pose fit, but only a1-a8 are real training
+        targets -- a9-a12 are extra measured points, not the model's
+        output keypoints)."""
+        cfg = self.object_config(route, obj_type)
+        return cfg.get("training_labels") or cfg["labels"]
+
     def local_keypoints(self, route: str, obj_type: str) -> Optional[np.ndarray]:
         lk = self.object_config(route, obj_type)["local_keypoints_m"]
         return np.asarray(lk, dtype=np.float64) if lk is not None else None

@@ -6,6 +6,7 @@
       "plug": {
         "_comment": "12-point model, per user's real caliper measurements of the physical SFP plug: a1-a4 = 0in (near/tip face), a5-a8 = 0.75in = 19.05mm, a9-a12 = 1.5in = 38.10mm, all measured from the near face along the insertion axis. x,y cross-section kept from the original 8-point model (not independently re-measured). Depths verified plausible against a real photo (run_20260915_195532_775244) showing a full-size SFP transceiver body long enough for a 38.1mm feature -- NOT yet verified via a real reprojection check (production model has a real/sim domain gap, gave 0 detections on that real photo).",
         "labels": ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8", "a9", "a10", "a11", "a12"],
+        "training_labels": ["a1", "a2", "a3", "a4", "a5", "a6", "a7", "a8"],
         "local_keypoints_m": [
           [0.0064, 0.0038, -0.0020],
           [-0.0064, 0.0038, -0.0020],
