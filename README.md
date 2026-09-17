@@ -77,17 +77,30 @@ for the physical rig that captured these images:
 (the AIC Gazebo rig at 1152x1024) -- it documents the schema, it is NOT valid
 for real camera captures at 2464x2056.
 
-`calibration.real_wrist_v3.json` in this repo IS a real, usable calibration:
-converted from `~/ws_nr/calibration/three_camera_charuco_v3` (Charuco board,
-100 shared views, per-camera RMS ~0.7px, Basler acA2440-20gc + 8.5mm lens at
-2464x2056 -- matches this tool's target resolution exactly). Camera mapping
-used: `camera_1`(serial 25530362)`=left`, `camera_2`(25530348)`=center`,
-`camera_3`(25530346)`=right`. The reference/common frame is `camera_1`
-(left)'s own optical frame -- `T_tool0_from_optical` in this file really
-means "T from the left camera's frame", the field name is kept only for
-schema compatibility. **Re-run the Charuco calibration and regenerate this
-file if focus, aperture, resolution, or camera mounting changes** (per that
-calibration's own `capture_settings.json` note).
+`calibration.real_wrist_best.json` in this repo is the **recommended real
+calibration** -- use this one. Converted from
+`~/ws_nr/calibration/three_camera_best_calibration` (robust joint refinement
+combining three Charuco board datasets: large 10x7, close 6x4, dense 8x6;
+175/300 triplets retained by a 2px robust cutoff; Basler acA2440-20gc +
+8.5mm lens at 2464x2056). Camera mapping: `left`=serial 25530362,
+`center`=25530348, `right`=25530346. Reference/common frame is `left`'s own
+optical frame -- `T_tool0_from_optical` really means "T from the left
+camera's frame", kept only for schema compatibility.
+
+`calibration.real_wrist_v3.json` / `v4.json` are kept for reference but
+**should not be used** -- both were later found to have a real ~8% baseline
+scale error (an incorrect board-size assumption during those Charuco
+captures), independently confirmed by re-deriving one of the source
+datasets (`three_camera_charuco_v1`, same board type) directly from its own
+raw corner detections: 88.256mm/152.894mm baseline, matching
+`real_wrist_best`'s 88.848mm/153.187mm to <1mm, not v3/v4's ~96mm/~167mm. On
+one real labeling triplet, switching from v3 to `real_wrist_best` dropped
+the cross-camera position disagreement from 9.57mm to 2.68mm with identical
+clicks and identical connector geometry -- i.e. that gap was a real
+calibration bug, not click noise or a geometry error.
+
+**Re-run the Charuco calibration and regenerate this file if focus,
+aperture, resolution, or camera mounting changes.**
 
 Without a calibration file, the tool still works -- Plug objects just fall
 back to fully-manual labeling like Port objects already are.
