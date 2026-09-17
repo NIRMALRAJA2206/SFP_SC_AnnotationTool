@@ -3,13 +3,55 @@
 Cross-platform (Linux / Windows / macOS) keypoint labeling tool for SFP and
 SC plug/port images, built for triplet (left/center/right) camera captures.
 
-## Install
+## Setup (Windows / Linux / macOS)
+
+Requires **Python 3.9+** and **git**. Tested with PySide6 6.11, OpenCV 5.0,
+NumPy 2.4, Python 3.12.
+
+### 1. Get the code
+```
+git clone https://github.com/NIRMALRAJA2206/SFP_SC_AnnotationTool.git
+cd SFP_SC_AnnotationTool
+```
+
+### 2. Create + activate a virtual environment
+
+**Linux / macOS**
+```
+python3 -m venv .venv
+source .venv/bin/activate
+```
+
+**Windows (PowerShell)**
+```
+py -m venv .venv
+.venv\Scripts\Activate.ps1
+```
+
+**Windows (cmd.exe)**
+```
+py -m venv .venv
+.venv\Scripts\activate.bat
+```
+
+You'll see `(.venv)` in your prompt once active. Run this activation step
+every time you open a new terminal for this project.
+
+### 3. Install dependencies
 ```
 pip install -r requirements.txt
+```
+
+### 4. Launch the tool
+```
 python main.py
 ```
-Tested with PySide6 6.11, OpenCV 5.0, NumPy 2.4, Python 3.12. Should work on
-any recent Python 3.9+.
+(On Windows use `python main.py`; on Linux/macOS `python3 main.py` also
+works if `python` isn't aliased to Python 3.)
+
+### 5. Later sessions
+Just re-activate the venv (step 2's activate command) and run `python main.py`
+again -- no need to reinstall.
 
 ## Workflow
 1. On launch: choose **SFP** or **SC** (asked every time you start the tool).
