@@ -13,7 +13,8 @@ from PySide6.QtWidgets import (QFileDialog, QFrame, QGroupBox, QHBoxLayout,
 from . import state as st
 from .canvas import ImageCanvas
 from .config import AppConfig, load_calibration
-from .geometry import auto_calculate, compute_direct_midpoints, compute_parallelogram_completion
+from .geometry import (auto_calculate, compute_direct_midpoints,
+                        compute_parallelogram_completion, triangulate_and_reproject)
 from .exporter import export_route_object
 
 REF_GREEN = "reference"
@@ -439,6 +440,8 @@ class MainWindow(QMainWindow):
             color = self.config.color("midpoint_2d_point")
         elif source == "parallelogram_2d":
             color = self.config.color("parallelogram_2d_point")
+        elif source == "triangulated":
+            color = self.config.color("triangulated_point")
         else:
             color = self.config.color("calculated_point")
         btn.setStyleSheet(
@@ -467,6 +470,8 @@ class MainWindow(QMainWindow):
                 color = self.config.color("midpoint_2d_point")
             elif source == "parallelogram_2d":
                 color = self.config.color("parallelogram_2d_point")
+            elif source == "triangulated":
+                color = self.config.color("triangulated_point")
             else:
                 color = self.config.color("calculated_point")
             self.canvas.set_point(label, p["x"], p["y"], color)
@@ -571,9 +576,43 @@ class MainWindow(QMainWindow):
             prefix = (self.status_label.text() + "  ") if direct_filled_msgs else ""
             self.status_label.setText(prefix + "Parallelogram-completed -- " + ", ".join(parallelogram_filled_msgs))
 
-        # Step 2: only labels NOT covered by steps 1/1b need the calibrated
-        # multi-view pipeline at all (e.g. a point whose midpoint parent
-        # isn't visible/manual in that particular camera).
+        # Step 1c: direct two-view triangulation + reprojection. Preferred
+        # over the rigid-pose-fit fallback (step 3) whenever it applies: if
+        # a camera is still missing a label, but the OTHER TWO cameras both
+        # already have it (typically because steps 1/1b just filled them in,
+        # calibration-free), triangulate that point directly from those two
+        # real observations and reproject it into the missing camera. This
+        # doesn't assume the object's exact rigid shape is correct -- it only
+        # needs real point correspondence + calibration -- so it's simpler
+        # and more robust than fitting the whole local_keypoints_m model to
+        # a reference subset.
+        triangulate_filled_msgs = []
+        if self.calibration:
+            cams = ("left", "center", "right")
+            for target_cam in cams:
+                source_cams = tuple(c for c in cams if c != target_cam)
+                still_missing = [l for l in labels if l not in points_by_camera.get(target_cam, {})]
+                if not still_missing:
+                    continue
+                filled = triangulate_and_reproject(points_by_camera, self.calibration, source_cams, target_cam)
+                new_labels = []
+                for label in still_missing:
+                    if label not in filled:
+                        continue
+                    x, y = filled[label]
+                    triplet.set_point(target_cam, obj_type, label, x, y, "triangulated")
+                    points_by_camera.setdefault(target_cam, {})[label] = (x, y)
+                    new_labels.append(label)
+                if new_labels:
+                    triangulate_filled_msgs.append(f"{target_cam}:{sorted(new_labels)}")
+        if triangulate_filled_msgs:
+            prefix = self.status_label.text() + "  " if (direct_filled_msgs or parallelogram_filled_msgs) else ""
+            self.status_label.setText(prefix + "Triangulated from other 2 views -- " + ", ".join(triangulate_filled_msgs))
+
+        # Step 2: only labels NOT covered by steps 1/1b/1c need the rigid-
+        # pose-fit calibrated pipeline at all (e.g. a point that's still
+        # missing in >=2 cameras at once, so there's no pair to triangulate
+        # from and no reference set complete enough to solve a pose either).
         still_needed_any = any(
             label not in points_by_camera.get(cam, {})
             for cam in ("left", "center", "right")
@@ -621,7 +660,7 @@ class MainWindow(QMainWindow):
                 # Never overwrite a manual override, or a value already
                 # filled by the (preferred, calibration-free) direct 2-D
                 # midpoint pass above.
-                if existing.get(label, {}).get("source") in ("manual_override", "midpoint_2d", "parallelogram_2d"):
+                if existing.get(label, {}).get("source") in ("manual_override", "midpoint_2d", "parallelogram_2d", "triangulated"):
                     continue
                 triplet.set_point(cam, obj_type, label, x, y, source)
             # Deliberately NOT auto-promoting "partial" -> "done" here: the

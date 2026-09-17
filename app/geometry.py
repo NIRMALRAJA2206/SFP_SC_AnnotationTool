@@ -150,6 +150,67 @@ def compute_parallelogram_completion(
     return out
 
 
+def _projection_matrix(calib: CameraCalibration) -> np.ndarray:
+    T_cam_from_tool0 = np.linalg.inv(calib.T_tool0_from_optical)
+    return calib.K @ T_cam_from_tool0[:3, :4]
+
+
+def triangulate_and_reproject(
+    points_by_camera_px: Dict[str, Dict[str, Tuple[float, float]]],
+    calibration: Dict[str, CameraCalibration],
+    source_cams: Tuple[str, str],
+    target_cam: str,
+) -> Dict[str, Tuple[float, float]]:
+    """Fill a camera's points by directly triangulating each label from two
+    OTHER cameras' own pixel positions, then reprojecting into this camera.
+
+    Unlike auto_calculate() (which fits the object's known rigid-body shape
+    to a reference-point subset and reprojects that MODEL), this triangulates
+    each label independently from real observed pixels in 2 views and does
+    not assume the local rigid-body geometry is exactly correct at all -- it
+    only needs point correspondence and calibration. Preferred over
+    auto_calculate() whenever both source cameras already have a label
+    (typically because they filled it calibration-free via
+    compute_direct_midpoints / compute_parallelogram_completion first), since
+    it is simpler, doesn't compound a possibly-imperfect shape model, and
+    naturally handles a real part that doesn't perfectly match the assumed
+    geometry (e.g. the a9-a12 residual noted elsewhere in this codebase).
+
+    Distortion is handled explicitly: source pixels are undistorted before
+    triangulating (cv2.undistortPoints), and the reprojected point is
+    re-distorted for the target camera (cv2.projectPoints) -- both cameras'
+    real lens distortion is real and non-negligible on this rig.
+    """
+    cam_a, cam_b = source_cams
+    if cam_a not in calibration or cam_b not in calibration or target_cam not in calibration:
+        return {}
+    calib_a, calib_b, calib_t = calibration[cam_a], calibration[cam_b], calibration[target_cam]
+    pts_a, pts_b = points_by_camera_px.get(cam_a, {}), points_by_camera_px.get(cam_b, {})
+    shared_labels = sorted(set(pts_a.keys()) & set(pts_b.keys()))
+    if not shared_labels:
+        return {}
+
+    def _undistort(pt, calib):
+        arr = np.asarray([[pt]], dtype=np.float64)  # (1,1,2)
+        out = cv2.undistortPoints(arr, calib.K, calib.dist, P=calib.K)
+        return out.reshape(2)
+
+    P_a, P_b = _projection_matrix(calib_a), _projection_matrix(calib_b)
+    pts_a_undist = np.array([_undistort(pts_a[l], calib_a) for l in shared_labels], dtype=np.float64)
+    pts_b_undist = np.array([_undistort(pts_b[l], calib_b) for l in shared_labels], dtype=np.float64)
+
+    points_4d = cv2.triangulatePoints(P_a, P_b, pts_a_undist.T, pts_b_undist.T)
+    points_3d = (points_4d[:3] / points_4d[3]).T  # (N, 3)
+
+    T_target_from_tool0 = np.linalg.inv(calib_t.T_tool0_from_optical)
+    rvec, _ = cv2.Rodrigues(T_target_from_tool0[:3, :3])
+    tvec = T_target_from_tool0[:3, 3].reshape(3, 1)
+    proj, _ = cv2.projectPoints(points_3d, rvec, tvec, calib_t.K, calib_t.dist)
+    proj = proj.reshape(-1, 2)
+
+    return {label: (float(proj[i, 0]), float(proj[i, 1])) for i, label in enumerate(shared_labels)}
+
+
 @dataclass
 class AutoCalcResult:
     success: bool

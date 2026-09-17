@@ -84,6 +84,7 @@
     "manual_point": "#3b82f6",
     "midpoint_2d_point": "#14b8a6",
     "parallelogram_2d_point": "#a855f7",
+    "triangulated_point": "#2563eb",
     "warning_point": "#f59e0b",
     "active_button": "#facc15"
   }
