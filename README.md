@@ -87,17 +87,14 @@ combining three Charuco board datasets: large 10x7, close 6x4, dense 8x6;
 optical frame -- `T_tool0_from_optical` really means "T from the left
 camera's frame", kept only for schema compatibility.
 
-`calibration.real_wrist_v3.json` / `v4.json` are kept for reference but
-**should not be used** -- both were later found to have a real ~8% baseline
-scale error (an incorrect board-size assumption during those Charuco
-captures), independently confirmed by re-deriving one of the source
-datasets (`three_camera_charuco_v1`, same board type) directly from its own
-raw corner detections: 88.256mm/152.894mm baseline, matching
-`real_wrist_best`'s 88.848mm/153.187mm to <1mm, not v3/v4's ~96mm/~167mm. On
-one real labeling triplet, switching from v3 to `real_wrist_best` dropped
-the cross-camera position disagreement from 9.57mm to 2.68mm with identical
-clicks and identical connector geometry -- i.e. that gap was a real
-calibration bug, not click noise or a geometry error.
+(Two earlier calibration attempts, `v3`/`v4`, were removed from this repo
+after being found to have a real ~8% baseline scale error from an incorrect
+board-size assumption during those Charuco captures -- independently
+confirmed by re-deriving one of the source datasets directly from its own
+raw corner detections, and by a direct before/after test on real labeling
+clicks: switching to the corrected calibration dropped cross-camera position
+disagreement from 9.57mm to 2.68mm with identical clicks and geometry. Full
+history is in git log if ever needed.)
 
 **Re-run the Charuco calibration and regenerate this file if focus,
 aperture, resolution, or camera mounting changes.**
