@@ -13,8 +13,9 @@ from PySide6.QtWidgets import (QFileDialog, QFrame, QGroupBox, QHBoxLayout,
 from . import state as st
 from .canvas import ImageCanvas
 from .config import AppConfig, load_calibration
-from .geometry import (auto_calculate, compute_direct_midpoints,
-                        compute_parallelogram_completion, triangulate_and_reproject)
+from .geometry import (auto_calculate, compute_affine_completion,
+                        compute_direct_midpoints, compute_parallelogram_completion,
+                        triangulate_and_reproject)
 from .exporter import export_route_object
 
 REF_GREEN = "reference"
@@ -440,6 +441,8 @@ class MainWindow(QMainWindow):
             color = self.config.color("midpoint_2d_point")
         elif source == "parallelogram_2d":
             color = self.config.color("parallelogram_2d_point")
+        elif source == "affine_2d":
+            color = self.config.color("affine_2d_point")
         elif source == "triangulated":
             color = self.config.color("triangulated_point")
         else:
@@ -470,6 +473,8 @@ class MainWindow(QMainWindow):
                 color = self.config.color("midpoint_2d_point")
             elif source == "parallelogram_2d":
                 color = self.config.color("parallelogram_2d_point")
+            elif source == "affine_2d":
+                color = self.config.color("affine_2d_point")
             elif source == "triangulated":
                 color = self.config.color("triangulated_point")
             else:
@@ -576,7 +581,28 @@ class MainWindow(QMainWindow):
             prefix = (self.status_label.text() + "  ") if direct_filled_msgs else ""
             self.status_label.setText(prefix + "Parallelogram-completed -- " + ", ".join(parallelogram_filled_msgs))
 
-        # Step 1c: direct two-view triangulation + reprojection. Preferred
+        # Step 1c: affine completion, per camera -- also calibration-free.
+        # Handles a rigid shape that ISN'T a parallelogram (e.g. the SC plug,
+        # which tapers between its near and rear face, so a "side face" like
+        # c1,c5,c8,c4 no longer satisfies the parallelogram identity). Fits
+        # one 2-D affine map from ALL already-known local-3D points in a
+        # camera to their observed pixels, then predicts every still-missing
+        # label through that same map. Needs >=4 known non-coplanar points in
+        # a camera (checked internally); runs after steps 1/1b so it can use
+        # points those just filled in.
+        affine_filled_msgs = []
+        if local_kps is not None:
+            affine = compute_affine_completion(local_kps, labels, points_by_camera)
+            for cam, cam_points in affine.items():
+                for label, (x, y) in cam_points.items():
+                    triplet.set_point(cam, obj_type, label, x, y, "affine_2d")
+                    points_by_camera.setdefault(cam, {})[label] = (x, y)
+                affine_filled_msgs.append(f"{cam}:{sorted(cam_points.keys())}")
+        if affine_filled_msgs:
+            prefix = (self.status_label.text() + "  ") if (direct_filled_msgs or parallelogram_filled_msgs) else ""
+            self.status_label.setText(prefix + "Affine-completed -- " + ", ".join(affine_filled_msgs))
+
+        # Step 1d: direct two-view triangulation + reprojection. Preferred
         # over the rigid-pose-fit fallback (step 3) whenever it applies: if
         # a camera is still missing a label, but the OTHER TWO cameras both
         # already have it (typically because steps 1/1b just filled them in,
@@ -609,7 +635,7 @@ class MainWindow(QMainWindow):
             prefix = self.status_label.text() + "  " if (direct_filled_msgs or parallelogram_filled_msgs) else ""
             self.status_label.setText(prefix + "Triangulated from other 2 views -- " + ", ".join(triangulate_filled_msgs))
 
-        # Step 2: only labels NOT covered by steps 1/1b/1c need the rigid-
+        # Step 2: only labels NOT covered by steps 1/1b/1c/1d need the rigid-
         # pose-fit calibrated pipeline at all (e.g. a point that's still
         # missing in >=2 cameras at once, so there's no pair to triangulate
         # from and no reference set complete enough to solve a pose either).
@@ -660,7 +686,7 @@ class MainWindow(QMainWindow):
                 # Never overwrite a manual override, or a value already
                 # filled by the (preferred, calibration-free) direct 2-D
                 # midpoint pass above.
-                if existing.get(label, {}).get("source") in ("manual_override", "midpoint_2d", "parallelogram_2d", "triangulated"):
+                if existing.get(label, {}).get("source") in ("manual_override", "midpoint_2d", "parallelogram_2d", "affine_2d", "triangulated"):
                     continue
                 triplet.set_point(cam, obj_type, label, x, y, source)
             # Deliberately NOT auto-promoting "partial" -> "done" here: the

@@ -50,27 +50,25 @@
     },
     "sc": {
       "plug": {
-        "_comment": "8-point cuboid. Real caliper measurements (2026-09-17): c3-c4 (width, x-axis) = 1in = 25.4mm full (half=0.0127m) -- corrects the earlier sim-derived 20mm. c4-c8 (depth, near face to rear face along insertion axis) = 0.5in = 12.7mm -- corrects the earlier sim-derived 12mm. Height (c1-c4, y-axis) unchanged at 6.4mm (not re-measured). Near-face tip inset (-0.00265) unchanged, a stability margin not part of either measured dimension. Left camera's reference set (c1,c3,c4,c5,c6) plus 'rectangles' below make left FULLY calibration-free: near face [c1,c2,c3,c4] completes c2 from c1/c3/c4; left-side face [c1,c5,c8,c4] completes c8 from c1/c4/c5; right-side face [c2,c6,c7,c3] completes c7 from c2(already computed)/c3/c6 -- same parallelogram-completion approach as SFP plug, applied to 3 different faces of the same cuboid.",
+        "_comment": "8-point TAPERED cuboid -- rear face is physically larger than the near face, confirmed by real caliper measurement (2026-09-17): near face (c1,c2,c3,c4) is 0.8in x 0.3in (width x height), rear face (c5,c6,c7,c8) is 1.0in x 0.5in. Depth (near to rear, insertion axis) = 0.5in = 12.7mm, unchanged from an earlier round. Near-face tip inset (-0.00265) unchanged, a stability margin not part of any measured dimension. IMPORTANT: because the two faces are different sizes, a 'side face' (e.g. c1,c5,c8,c4) is NOT a parallelogram -- verified false (c1+c8 != c5+c4) before this was caught. Only the near-face rectangle [c1,c2,c3,c4] is still a valid same-plane parallelogram (kept in 'rectangles' below); the rear-face corners are filled instead via compute_affine_completion (fits one 2-D affine map from ALL known local-3D points to their pixels, then predicts the rest -- correct for any known rigid shape, taper included, not just parallelograms). Left's reference set (c1,c3,c4,c5,c6) and right's (c1,c2,c4,c5,c6) each have >=4 non-coplanar known points once the near-face rectangle fills in, satisfying compute_affine_completion's requirement.",
         "labels": ["c1", "c2", "c3", "c4", "c5", "c6", "c7", "c8"],
         "local_keypoints_m": [
-          [-0.0127, -0.0032, -0.00265],
-          [0.0127, -0.0032, -0.00265],
-          [0.0127, 0.0032, -0.00265],
-          [-0.0127, 0.0032, -0.00265],
-          [-0.0127, -0.0032, -0.01535],
-          [0.0127, -0.0032, -0.01535],
-          [0.0127, 0.0032, -0.01535],
-          [-0.0127, 0.0032, -0.01535]
+          [-0.01016, -0.00381, -0.00265],
+          [0.01016, -0.00381, -0.00265],
+          [0.01016, 0.00381, -0.00265],
+          [-0.01016, 0.00381, -0.00265],
+          [-0.0127, -0.00635, -0.01535],
+          [0.0127, -0.00635, -0.01535],
+          [0.0127, 0.00635, -0.01535],
+          [-0.0127, 0.00635, -0.01535]
         ],
         "reference_points": {
           "left": ["c1", "c3", "c4", "c5", "c6"],
           "center": ["c1", "c4"],
-          "right": ["c1", "c4", "c5"]
+          "right": ["c1", "c2", "c4", "c5", "c6"]
         },
         "rectangles": [
-          ["c1", "c2", "c3", "c4"],
-          ["c1", "c5", "c8", "c4"],
-          ["c2", "c6", "c7", "c3"]
+          ["c1", "c2", "c3", "c4"]
         ],
         "auto_calculate": true,
         "reference_image_dir": "assets/references/sc/plug"
@@ -90,6 +88,7 @@
     "manual_point": "#3b82f6",
     "midpoint_2d_point": "#14b8a6",
     "parallelogram_2d_point": "#a855f7",
+    "affine_2d_point": "#ec4899",
     "triangulated_point": "#2563eb",
     "warning_point": "#f59e0b",
     "active_button": "#facc15"

@@ -150,6 +150,60 @@ def compute_parallelogram_completion(
     return out
 
 
+def compute_affine_completion(
+    local_keypoints_m: np.ndarray,
+    labels: List[str],
+    points_by_camera_px: Dict[str, Dict[str, Tuple[float, float]]],
+    min_known: int = 4,
+) -> Dict[str, Dict[str, Tuple[float, float]]]:
+    """Fill every missing label, per camera, by fitting ONE 2-D affine map
+    from the object's known local 3-D geometry to the already-placed 2-D
+    pixels, then predicting the missing labels' pixels through that same
+    map. No calibration, no rectangle/parallelogram assumption about the
+    shape at all -- correct for ANY known rigid geometry, including a
+    tapered/stepped object where opposite faces have different dimensions
+    (where the parallelogram trick above is NOT valid: a taper means
+    opposite "side" corners no longer satisfy the parallelogram identity).
+
+    Requires >= min_known (default 4) already-placed points in a camera,
+    and that they are NOT all coplanar in 3-D -- a purely in-plane point set
+    can't constrain the map's response to depth at all, so depth-involving
+    points would be extrapolated blind. (Same reasoning as the coplanarity
+    check already used for the calibrated P3P/IPPE/SQPNP dispatch.)
+
+    Math: solve u = a1*x + a2*y + a3*z + a4, v = b1*x + b2*y + b3*z + b4
+    (an affine map, 8 unknowns total) by least squares from the known
+    (local_xyz, observed_uv) pairs, then apply it to every missing label's
+    known local_xyz. This is the weak-perspective/affine-camera
+    approximation already accepted for compute_direct_midpoints and
+    compute_parallelogram_completion -- exact for orthographic projection,
+    approximately correct for a small object at typical working-distance
+    standoff, same caveat as those two.
+    """
+    label_index = {l: i for i, l in enumerate(labels)}
+    out: Dict[str, Dict[str, Tuple[float, float]]] = {}
+    for cam, existing in points_by_camera_px.items():
+        known_labels = [l for l in labels if l in existing]
+        missing_labels = [l for l in labels if l not in existing]
+        if len(known_labels) < min_known or not missing_labels:
+            continue
+        X = local_keypoints_m[[label_index[l] for l in known_labels]]
+        centered = X - X.mean(axis=0)
+        if np.linalg.matrix_rank(centered, tol=1e-6) < 3:
+            continue  # all known points coplanar -- depth response unconstrained
+        obs = np.array([existing[l] for l in known_labels], dtype=np.float64)
+        A = np.hstack([X, np.ones((len(X), 1))])
+        params_u, *_ = np.linalg.lstsq(A, obs[:, 0], rcond=None)
+        params_v, *_ = np.linalg.lstsq(A, obs[:, 1], rcond=None)
+
+        Xm = local_keypoints_m[[label_index[l] for l in missing_labels]]
+        Am = np.hstack([Xm, np.ones((len(Xm), 1))])
+        pred_u = Am @ params_u
+        pred_v = Am @ params_v
+        out[cam] = {l: (float(pred_u[i]), float(pred_v[i])) for i, l in enumerate(missing_labels)}
+    return out
+
+
 def _projection_matrix(calib: CameraCalibration) -> np.ndarray:
     T_cam_from_tool0 = np.linalg.inv(calib.T_tool0_from_optical)
     return calib.K @ T_cam_from_tool0[:3, :4]
