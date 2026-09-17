@@ -52,6 +52,13 @@ class AppConfig:
         calibrated multi-view pipeline."""
         return self.object_config(route, obj_type).get("midpoint_of") or {}
 
+    def rectangles(self, route: str, obj_type: str) -> list:
+        """List of 4-label lists, each in cyclic order around one rigid
+        rectangle, used for calibration-free parallelogram completion (the
+        4th corner from the other 3) -- see geometry.py::
+        compute_parallelogram_completion."""
+        return self.object_config(route, obj_type).get("rectangles") or []
+
     def reference_image_path(self, route: str, obj_type: str, camera: str) -> Path:
         rel = self.object_config(route, obj_type)["reference_image_dir"]
         return APP_ROOT / rel / f"{camera}.png"

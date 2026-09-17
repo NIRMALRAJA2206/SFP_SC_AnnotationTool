@@ -13,7 +13,7 @@ from PySide6.QtWidgets import (QFileDialog, QFrame, QGroupBox, QHBoxLayout,
 from . import state as st
 from .canvas import ImageCanvas
 from .config import AppConfig, load_calibration
-from .geometry import auto_calculate, compute_direct_midpoints
+from .geometry import auto_calculate, compute_direct_midpoints, compute_parallelogram_completion
 from .exporter import export_route_object
 
 REF_GREEN = "reference"
@@ -437,6 +437,8 @@ class MainWindow(QMainWindow):
             color = self.config.color("reference_point")
         elif source == "midpoint_2d":
             color = self.config.color("midpoint_2d_point")
+        elif source == "parallelogram_2d":
+            color = self.config.color("parallelogram_2d_point")
         else:
             color = self.config.color("calculated_point")
         btn.setStyleSheet(
@@ -463,6 +465,8 @@ class MainWindow(QMainWindow):
                 color = self.config.color("reference_point")
             elif source == "midpoint_2d":
                 color = self.config.color("midpoint_2d_point")
+            elif source == "parallelogram_2d":
+                color = self.config.color("parallelogram_2d_point")
             else:
                 color = self.config.color("calculated_point")
             self.canvas.set_point(label, p["x"], p["y"], color)
@@ -549,7 +553,25 @@ class MainWindow(QMainWindow):
         if direct_filled_msgs:
             self.status_label.setText("Direct 2-D midpoint filled -- " + ", ".join(direct_filled_msgs))
 
-        # Step 2: only labels NOT covered by step 1 need the calibrated
+        # Step 1b: parallelogram-completion, per camera -- also calibration-
+        # free. Runs after the midpoint pass (above) so a rectangle missing
+        # its 4th corner can use a corner the midpoint pass JUST filled in
+        # (e.g. the mid-depth rectangle's a5 needs a6/a7/a8, which midpoint
+        # only just computed from a2/a10, a3/a11, a4/a12).
+        rectangles = self.config.rectangles(self.route, obj_type)
+        parallelogram_filled_msgs = []
+        if rectangles:
+            completed = compute_parallelogram_completion(rectangles, points_by_camera)
+            for cam, cam_points in completed.items():
+                for label, (x, y) in cam_points.items():
+                    triplet.set_point(cam, obj_type, label, x, y, "parallelogram_2d")
+                    points_by_camera.setdefault(cam, {})[label] = (x, y)
+                parallelogram_filled_msgs.append(f"{cam}:{sorted(cam_points.keys())}")
+        if parallelogram_filled_msgs:
+            prefix = (self.status_label.text() + "  ") if direct_filled_msgs else ""
+            self.status_label.setText(prefix + "Parallelogram-completed -- " + ", ".join(parallelogram_filled_msgs))
+
+        # Step 2: only labels NOT covered by steps 1/1b need the calibrated
         # multi-view pipeline at all (e.g. a point whose midpoint parent
         # isn't visible/manual in that particular camera).
         still_needed_any = any(
@@ -599,7 +621,7 @@ class MainWindow(QMainWindow):
                 # Never overwrite a manual override, or a value already
                 # filled by the (preferred, calibration-free) direct 2-D
                 # midpoint pass above.
-                if existing.get(label, {}).get("source") in ("manual_override", "midpoint_2d"):
+                if existing.get(label, {}).get("source") in ("manual_override", "midpoint_2d", "parallelogram_2d"):
                     continue
                 triplet.set_point(cam, obj_type, label, x, y, source)
             # Deliberately NOT auto-promoting "partial" -> "done" here: the

@@ -92,6 +92,64 @@ def compute_direct_midpoints(
     return out
 
 
+def compute_parallelogram_completion(
+    rectangles: List[List[str]],
+    points_by_camera_px: Dict[str, Dict[str, Tuple[float, float]]],
+) -> Dict[str, Dict[str, Tuple[float, float]]]:
+    """Complete the 4th corner of a rectangle from the other 3, PER CAMERA,
+    directly in 2-D pixel space -- no calibration, no 3-D triangulation.
+
+    Each entry in `rectangles` is 4 labels in CYCLIC order around the
+    rectangle (e.g. [a1, a2, a3, a4], matching a1-a2 / a4-a3 being the two
+    long edges and a1-a4 / a2-a3 the two short edges). For a true rectangle
+    (or any parallelogram), the two diagonals bisect each other at the same
+    midpoint, so opposite corners satisfy P1 + P3 = P2 + P4. Rearranged,
+    any single missing corner equals the sum of its two ADJACENT corners
+    minus the corner OPPOSITE it:
+        P1 = P2 + P4 - P3   P2 = P1 + P3 - P4
+        P3 = P2 + P4 - P1   P4 = P1 + P3 - P2
+    Concretely: draw a line through P2 parallel to the P3-P4 edge, and a
+    line through P4 parallel to the P2-P3 edge -- they intersect exactly at
+    P1. (Same equation, just described as two ray intersections instead of
+    vector arithmetic.)
+
+    Only fires when EXACTLY 3 of the 4 corners are already placed in a given
+    camera and the 4th is missing -- never overwrites an existing point.
+    Same caveat as compute_direct_midpoints: this is exact for an
+    orthographic/affine view of a true rectangle, and only approximately
+    exact under real perspective projection (good enough at typical
+    working-distance standoff for a small object, not mathematically exact).
+    """
+    out: Dict[str, Dict[str, Tuple[float, float]]] = {}
+    for cam, existing in points_by_camera_px.items():
+        cam_out: Dict[str, Tuple[float, float]] = {}
+        for rect in rectangles:
+            if len(rect) != 4:
+                continue
+            present = [lbl for lbl in rect if lbl in existing or lbl in cam_out]
+            missing = [lbl for lbl in rect if lbl not in existing and lbl not in cam_out]
+            if len(missing) != 1:
+                continue
+            target = missing[0]
+            idx = rect.index(target)
+            adjacent_a = rect[(idx + 1) % 4]
+            opposite = rect[(idx + 2) % 4]
+            adjacent_b = rect[(idx + 3) % 4]
+
+            def _get(lbl):
+                return existing.get(lbl) or cam_out.get(lbl)
+
+            pa, pb, po = _get(adjacent_a), _get(adjacent_b), _get(opposite)
+            if pa is None or pb is None or po is None:
+                continue
+            x = pa[0] + pb[0] - po[0]
+            y = pa[1] + pb[1] - po[1]
+            cam_out[target] = (x, y)
+        if cam_out:
+            out[cam] = cam_out
+    return out
+
+
 @dataclass
 class AutoCalcResult:
     success: bool

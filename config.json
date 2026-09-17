@@ -32,6 +32,11 @@
           "a7": ["a3", "a11"],
           "a8": ["a4", "a12"]
         },
+        "rectangles": [
+          ["a1", "a2", "a3", "a4"],
+          ["a5", "a6", "a7", "a8"],
+          ["a9", "a10", "a11", "a12"]
+        ],
         "auto_calculate": true,
         "reference_image_dir": "assets/references/sfp/plug"
       },
@@ -78,6 +83,7 @@
     "calculated_point": "#3b82f6",
     "manual_point": "#3b82f6",
     "midpoint_2d_point": "#14b8a6",
+    "parallelogram_2d_point": "#a855f7",
     "warning_point": "#f59e0b",
     "active_button": "#facc15"
   }
