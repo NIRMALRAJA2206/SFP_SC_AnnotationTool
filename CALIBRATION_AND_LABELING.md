@@ -21,11 +21,9 @@ Every route (`sfp`, `sc`) has two objects (`plug`, `port`). Each object has:
 - `reference_points` — per camera, which labels are the "green" points a
   human places directly; everything else is either computed or, for Port,
   also placed manually.
-- `midpoint_of` (Plug only, optional) — labels defined as the exact 3-D
-  midpoint of two other labels (see §4).
 - `training_labels` (optional) — the subset of `labels` actually written to
   the exported training dataset; defaults to all of `labels`.
-- `auto_calculate` — whether the calibrated pose pipeline (§5) is enabled
+- `auto_calculate` — whether the calibrated pose pipeline (§4) is enabled
   for this object at all.
 - `reference_image_dir` — the thumbnail shown while labeling.
 
@@ -38,7 +36,7 @@ a9-a12: a visible reference line/marking, 1.5in from the tip
 ```
 Cross-section: thickness (a1↔a4) = 0.275in = 6.985mm, width (a3↔a4) = 0.5in
 = 12.7mm. Both are **real caliper measurements of the physical part**, not
-sim-derived guesses — see §7 for how these were verified.
+sim-derived guesses — see §6 for how these were verified.
 
 Per-camera reference sets:
 ```
@@ -95,7 +93,7 @@ cameras at once.
 a *robust joint refinement* combining three separate Charuco datasets (a
 large 10×7 board, a "close" 6×4 board, and a "dense" 8×6 board), optimizing
 one consistent 3-camera rig geometry against all of them at once with a
-2-pixel robust rejection cutoff (175 of 300 total triplets kept). See §7 for
+2-pixel robust rejection cutoff (175 of 300 total triplets kept). See §6 for
 why this replaced two earlier (wrong) calibration attempts.
 
 ---
@@ -114,7 +112,7 @@ why this replaced two earlier (wrong) calibration attempts.
      - **Phase 1 (green)**: Left → Center → Right, placing *only* the
        reference-point set for each camera (see §1). Nothing else is shown.
      - **Auto-calc** runs once, automatically, the moment Phase 1 finishes
-       across all 3 views (§4 + §5).
+       across all 3 views (§4).
      - **Phase 2 (review)**: Left → Center → Right again, now showing every
        point (green + whatever got filled in) for the human to check and,
        if needed, click-to-override any calculated point.
@@ -133,47 +131,15 @@ why this replaced two earlier (wrong) calibration attempts.
 
 ---
 
-## 4. Calculating a point without calibration: direct 2-D midpoints
+## 4. Calculating the plug's non-reference points: the calibration pipeline
 
-For SFP plug, `a5 = midpoint(a1, a9)`, `a6 = midpoint(a2, a10)`, `a7 =
-midpoint(a3, a11)`, `a8 = midpoint(a4, a12)` — this is a real, physical fact
-about the connector (the mid-depth mark sits exactly halfway between the
-tip and the 1.5in reference line).
-
-**Wherever both parent points are already manually placed in the SAME
-camera view**, the tool computes the midpoint the simplest possible way:
-average the two parents' pixel coordinates directly, in that image. No
-calibration, no 3-D triangulation, no camera-to-camera math — the result
-can't inherit calibration error or cross-camera disagreement, because it
-never leaves 2-D pixel space for that one image.
-
-```
-midpoint_x = (parent_a.x + parent_b.x) / 2
-midpoint_y = (parent_a.y + parent_b.y) / 2
-```
-
-Displayed in **teal** (`midpoint_2d_point`) so it's visually distinct from a
-calibrated result. This is preferred whenever it's available — it covers 8
-of the 12 a5-a8 slots across a typical labeled triplet (left gets a6/a7/a8
-this way, center gets a7/a8, right gets a5/a7/a8) — leaving only the labels
-whose parent isn't visible/manual in that particular camera (a1, a2, a5, a6,
-a9, a10, in the views where they're not a reference point) needing the
-calibrated pipeline below.
-
-**Caveat, stated honestly**: a 2-D pixel midpoint is not *exactly* the
-reprojection of the true 3-D midpoint under perspective (only exact for
-orthographic projection, or a line exactly perpendicular to the camera's
-view direction). For a small object at typical working-distance standoff,
-this error is normally much smaller than what the calibrated pipeline
-itself was contributing — see §7 for the measured comparison.
-
----
-
-## 5. Calculating a point WITH calibration: the multi-view pose pipeline
-
-For any label that direct-midpoint can't cover, the tool falls back to
-fitting the plug's full 3-D pose from whichever cameras have their complete
-reference set placed, then reprojecting every label into every camera.
+For the Plug object, every keypoint that isn't one of the per-camera
+reference points (§1) is computed using the calibration — fitting the
+plug's full 3-D pose from whichever cameras have their complete reference
+set placed, then reprojecting every remaining label into every camera. This
+is what makes calibration essential for Plug labeling: the reference points
+are the only ones a human places directly, and calibration is what turns
+those into every other keypoint.
 
 ### Step 1 — per-camera pose solve (`geometry.py::_solve_pose_branches`)
 For each camera with all its reference points placed, solve: given the
@@ -236,7 +202,7 @@ A manual click on a calculated (blue/orange) point during Phase 2 is tagged
 
 ---
 
-## 6. Coordinate/units summary (so the numbers in config.json make sense)
+## 5. Coordinate/units summary (so the numbers in config.json make sense)
 
 - `local_keypoints_m`: **metres**, in the object's own local frame, origin
   and axis choice are arbitrary but must be internally consistent (SFP
@@ -250,7 +216,7 @@ A manual click on a calculated (blue/orange) point during Phase 2 is tagged
 
 ---
 
-## 7. Worked example: the real debugging session that shaped this design
+## 6. Worked example: the real debugging session that shaped this design
 
 This section exists so a future "why does X work this way" question has a
 concrete answer, not just an assertion.
@@ -305,7 +271,7 @@ future investigation, honestly stated as such rather than papered over.
 
 ---
 
-## 8. Practical playbook: diagnosing a bad auto-calc result
+## 7. Practical playbook: diagnosing a bad auto-calc result
 
 If a calculated point looks visibly wrong, this is the order that actually
 worked, cheapest/most-isolating checks first:
@@ -327,11 +293,7 @@ worked, cheapest/most-isolating checks first:
    calibration extrinsics or cross-camera math at all — a bad result here
    is either click imprecision or a genuinely wrong local geometry model,
    never a calibration bug.
-5. **Compare direct 2-D midpoints against calibrated reprojections** for
-   the same label, where both are computable — a large gap (tens to
-   hundreds of pixels) points at the calibrated pipeline specifically; a
-   small gap (a few pixels) is consistent with ordinary perspective/noise.
-6. Only after 2-5 come back clean should a geometry re-measurement be
+5. Only after 2-4 come back clean should a geometry re-measurement be
    trusted as *the* fix — and even then, verify it the same way (isolated
    single-camera residual, before vs after) rather than accepting a new
    caliper reading on faith.
