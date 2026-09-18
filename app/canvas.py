@@ -63,7 +63,10 @@ class ImageCanvas(QGraphicsView):
         # pointer / Aborted (core dumped)" crash on placing a point.
         self.clear_all_points()
         if self._pixmap_item is not None:
-            self._scene.removeItem(self._pixmap_item)
+            try:
+                self._scene.removeItem(self._pixmap_item)
+            except RuntimeError:
+                pass
             self._pixmap_item = None
         pix = QPixmap.fromImage(img)
         self._pixmap_item = self._scene.addPixmap(pix)
@@ -133,7 +136,12 @@ class ImageCanvas(QGraphicsView):
         item = self._point_items.pop(label, None)
         if item:
             for it in item:
-                self._scene.removeItem(it)
+                try:
+                    self._scene.removeItem(it)
+                except RuntimeError:
+                    pass  # underlying C++ item already gone (e.g. a prior
+                    # teardown already removed it) -- our goal is just to
+                    # make sure it's gone, which it already is
 
     def clear_all_points(self):
         for label in list(self._point_items.keys()):

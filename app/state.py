@@ -141,7 +141,9 @@ def load_or_init_states(folder: Path, route: str) -> List[TripletState]:
 
 
 def first_unresolved_index(states: List[TripletState]) -> int:
+    if not states:
+        return -1  # caller must check for this -- no triplets found at all
     for i, s in enumerate(states):
         if not s.is_fully_resolved():
             return i
-    return max(0, len(states) - 1)
+    return len(states) - 1

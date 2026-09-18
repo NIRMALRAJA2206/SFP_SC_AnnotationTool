@@ -194,6 +194,17 @@ class MainWindow(QMainWindow):
         self.canvas.arm_placement(False)
         self._clear_left_panel()
 
+        if not self.triplets:
+            self.progress_label.setText(f"No images found in {self.folder}")
+            msg = QLabel(
+                f"No matching left/center/right triplets were found in:\n{self.folder}\n\n"
+                "Check that this folder has left/, center/, right/ subfolders with "
+                "matching filenames, then use File > Open different folder..."
+            )
+            msg.setWordWrap(True)
+            self.left_layout.addWidget(msg)
+            return
+
         triplet = self.triplets[self.idx]
         self.progress_label.setText(
             f"Triplet {self.idx + 1}/{len(self.triplets)}: {triplet.stem}   "
