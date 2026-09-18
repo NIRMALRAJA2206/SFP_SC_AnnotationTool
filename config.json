@@ -64,7 +64,7 @@
         ],
         "reference_points": {
           "left": ["c1", "c3", "c4", "c5", "c8"],
-          "center": ["c1", "c4"],
+          "center": ["c1", "c4", "c5", "c8"],
           "right": ["c1", "c2", "c4", "c5", "c8"]
         },
         "rectangles": [

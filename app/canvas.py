@@ -36,6 +36,7 @@ class ImageCanvas(QGraphicsView):
         self._pixmap_item: Optional[QGraphicsPixmapItem] = None
         self._image_rect = QRectF()
         self._point_items: Dict[str, Tuple[QGraphicsEllipseItem, QGraphicsSimpleTextItem]] = {}
+        self._image_path: Optional[str] = None
 
         self._roi_mode = False
         self._roi_origin: Optional[QPointF] = None
@@ -46,15 +47,29 @@ class ImageCanvas(QGraphicsView):
 
     # ---- image loading -----------------------------------------------
     def load_image(self, path: str) -> bool:
+        if path == self._image_path and self._pixmap_item is not None:
+            return True  # same image already loaded -- avoid a needless
+            # scene teardown/rebuild on every single point placement
+            # (_goto_labeling calls this unconditionally on every redraw).
         img = QImage(path)
         if img.isNull():
             return False
-        self._scene.clear()
-        self._point_items.clear()
+        # Tear down the OLD image/points via controlled removeItem calls
+        # (matches _remove_point_item's pattern) rather than
+        # QGraphicsScene.clear() -- clear() force-deletes the underlying
+        # C++ objects immediately, which then double-frees when our own
+        # _point_items dict (still holding Python references to those same
+        # items) is cleared right after: this was the "free(): invalid
+        # pointer / Aborted (core dumped)" crash on placing a point.
+        self.clear_all_points()
+        if self._pixmap_item is not None:
+            self._scene.removeItem(self._pixmap_item)
+            self._pixmap_item = None
         pix = QPixmap.fromImage(img)
         self._pixmap_item = self._scene.addPixmap(pix)
         self._image_rect = QRectF(0, 0, pix.width(), pix.height())
         self._scene.setSceneRect(self._image_rect)
+        self._image_path = path
         self.reset_roi()
         return True
 
